@@ -24,6 +24,7 @@ func main() {
 
 	mapf, reducef := loadPlugin(os.Args[1])
 
+	//fmt.Println("worker start...")
 	mr.Worker(mapf, reducef)
 }
 

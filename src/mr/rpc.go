@@ -16,10 +16,11 @@ import "strconv"
 type MRJobType int
 
 const (
-	UnknownTask  MRJobType = iota // 未知任务
-	MapTask                       // map任务
-	ReduceTask                    // reduce任务
-	TerminalTask                  // worker停止任务
+	UnknownJob  MRJobType = iota // 未知任务
+	MapJob                       // map任务
+	ReduceJob                    // reduce任务
+	TerminalJob                  // worker停止任务
+	WaitJob
 )
 
 type MRJobState int
@@ -45,10 +46,13 @@ type ExampleArgs struct {
 
 type ExampleReply struct {
 	JobType MRJobType // 任务类型，map任务，或者是reduce任务，或者是让worker终结的任务
+	// 共同使用同一个字段表示任务id
+	JobId int
 
 	// ====== map 任务
 	MapJobFileName string // map任务的文件名
 	MapJobId       int    // map任务的id， 可以使用第几个文件来作为id
+	NReduce        int
 
 	// ====== reduce 任务
 	ReduceJobId int // reduce任务的id，一共有nReduce个reduce任务
@@ -58,11 +62,8 @@ type JobFinishArgs struct {
 	JobType MRJobType // 任务类型，map任务，或者是reduce任务，或者是让worker终结的任务
 	Success bool
 
-	// ====== map 任务
-	MapJobId int // map任务的id， 可以使用第几个文件来作为id
-
-	// ====== reduce 任务
-	ReduceJobId int // reduce任务的id，一共有nReduce个reduce任务
+	// 共同使用同一个字段表示任务id
+	JobId int
 }
 
 type JobFinishReply struct {

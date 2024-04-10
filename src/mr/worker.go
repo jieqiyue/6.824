@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 )
 import "log"
 import "net/rpc"
@@ -46,41 +47,54 @@ func Worker(mapf func(string, string) []KeyValue,
 	// Your worker implementation here.
 	canTerminal = false
 
-	for canTerminal {
+	for !canTerminal {
+		//fmt.Println("worker do loop .......")
 		// 1. 发送RPC请求到master，请求一个任务
 		args := ExampleArgs{}
 		args.X = 99
 		reply := ExampleReply{}
 		CallExample(&args, &reply)
+		//fmt.Println("worker call get job return , get a job ,job id :", reply.JobId)
+		//if reply.JobType == TerminalJob {
+		//	fmt.Println("worker get terminal job, shut down")
+		//	return
+		//}
 
 		// 2. 获取到了任务，开始执行任务
 		success := processJob(&reply, mapf, reducef)
 
 		// 3. 将任务结果返回到master
 		jobResultArgs := JobFinishArgs{
-			JobType:     reply.JobType,
-			MapJobId:    reply.MapJobId,
-			ReduceJobId: reply.ReduceJobId,
-			Success:     false,
+			JobType: reply.JobType,
+			JobId:   reply.JobId,
+			Success: false,
 		}
 		jobResultResp := JobFinishReply{}
 
 		if success {
+			//fmt.Println("worker do job type", reply.JobType, " job id:", reply.JobId, " are success")
 			jobResultArgs.Success = true
+		} else {
+			//fmt.Println("worker do job type", reply.JobType, " job id:", reply.JobId, " are fail")
 		}
 
 		RpcCallMaster("Coordinator.ReportJobResult", &jobResultArgs, &jobResultResp)
+
+		//fmt.Println("worker begin to sleep")
+		time.Sleep(3 * time.Second)
+		//fmt.Println("worker sleep over")
 	}
 
 }
 
 func processJob(reply *ExampleReply, mapf func(string, string) []KeyValue, reducef func(string, []string) string) bool {
-	if reply.JobType == TerminalTask {
+	if reply.JobType == TerminalJob {
+		//fmt.Println("get terminal job for debug to exit")
 		canTerminal = true
 		return true
 	}
 
-	if reply.JobType == MapTask {
+	if reply.JobType == MapJob {
 		intermediate := []KeyValue{}
 		// 进行map任务
 		file, err := os.Open(reply.MapJobFileName)
@@ -97,16 +111,18 @@ func processJob(reply *ExampleReply, mapf func(string, string) []KeyValue, reduc
 		kva := mapf(reply.MapJobFileName, string(content))
 		intermediate = append(intermediate, kva...)
 
+		//fmt.Println("map task after mapf, the len is:", len(intermediate))
 		// 将这个key value进行分组到map中
 		var imap = make(map[int][]KeyValue)
 		for _, pair := range intermediate {
-			index := ihash(pair.Key)
+			index := ihash(pair.Key) % reply.NReduce
 			imap[index] = append(imap[index], pair)
 		}
+		//fmt.Println("map task,imap len is:", len(imap))
 
 		// 遍历map将每一个key，value写入到中间文件
 		for i, pairs := range imap {
-			fianlInterMediateFileName := fmt.Sprintf(MapInterMediateTemplate, strconv.Itoa(reply.MapJobId), strconv.Itoa(i))
+			fianlInterMediateFileName := fmt.Sprintf(MapInterMediateTemplate, strconv.Itoa(reply.JobId), strconv.Itoa(i))
 			tmpFile, err := os.CreateTemp(".", fianlInterMediateFileName)
 			if err != nil {
 				fmt.Println("Error creating temp file:", err)
@@ -123,6 +139,7 @@ func processJob(reply *ExampleReply, mapf func(string, string) []KeyValue, reduc
 			}
 
 			// 当所有key，value都写入到文件之后，进行rename操作
+			//fmt.Println("map task begin to rename intermediate file, the finally file name is:", fianlInterMediateFileName, "the origin name is:", tmpFile.Name())
 			err = os.Rename(tmpFile.Name(), fianlInterMediateFileName)
 			if err != nil {
 				fmt.Println("map task rename tmep file fail, error:", err)
@@ -132,18 +149,19 @@ func processJob(reply *ExampleReply, mapf func(string, string) []KeyValue, reduc
 			tmpFile.Close()
 		}
 
-		fmt.Println("map task, all key/value are success store to file")
-	} else if reply.JobType == ReduceTask {
+		//fmt.Println("map task, all key/value are success store to file")
+	} else if reply.JobType == ReduceJob {
 		// 读取所有的中间文件
-		files, err := filepath.Glob(fmt.Sprintf(MapInterMediateTemplate, "*", strconv.Itoa(reply.ReduceJobId)))
+		files, err := filepath.Glob(fmt.Sprintf(MapInterMediateTemplate, "*", strconv.Itoa(reply.JobId)))
 		if err != nil {
 			fmt.Println("reduce task, get all inter file fail:", err)
 			return false
 		}
 		if len(files) == 0 {
-			fmt.Println("reduce task, find " + strconv.Itoa(reply.ReduceJobId) + " file len is 0")
+			//fmt.Println("reduce task, find " + strconv.Itoa(reply.JobId) + " file len is 0")
 			return true
 		}
+		//fmt.Println("reduce job, get all file, len:", len(files), "print all file:", files)
 
 		tempPairs := []KeyValue{}
 		for _, file := range files {
@@ -166,13 +184,15 @@ func processJob(reply *ExampleReply, mapf func(string, string) []KeyValue, reduc
 		}
 
 		sort.Sort(ByKey(tempPairs))
+		//fmt.Println("after sort:", tempPairs)
 
-		fianlReduceFileName := fmt.Sprintf(ReduceFileTemplate, strconv.Itoa(reply.ReduceJobId))
+		fianlReduceFileName := fmt.Sprintf(ReduceFileTemplate, strconv.Itoa(reply.JobId))
 		tmpFile, err := os.CreateTemp(".", fianlReduceFileName)
 		if err != nil {
 			fmt.Println("Error creating temp file:", err)
 			return false
 		}
+
 		i := 0
 		for i < len(tempPairs) {
 			j := i + 1
@@ -190,12 +210,15 @@ func processJob(reply *ExampleReply, mapf func(string, string) []KeyValue, reduc
 
 			i = j
 		}
+
 		err = os.Rename(tmpFile.Name(), fianlReduceFileName)
 		if err != nil {
 			fmt.Println("reduce task rename tmep file fail, error:", err)
 			return false
 		}
 		tmpFile.Close()
+	} else if reply.JobType == WaitJob {
+		return true
 	} else {
 		fmt.Printf("%s %d", "error...worker get unknow job type, type is:", reply.JobType)
 		return true
