@@ -29,7 +29,7 @@ func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 var canTerminal bool
-var MapInterMediateTemplate = "mr-%s-%s"
+var MapInterMediateTemplate = "mr-%s-%s" // mr-0-1    mr-0-2    mr-1-1   mr-1-2
 var ReduceFileTemplate = "mr-out-%s"
 
 // use ihash(key) % NReduce to choose the reduce

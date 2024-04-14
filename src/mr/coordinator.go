@@ -13,18 +13,19 @@ import "net/http"
 
 type Coordinator struct {
 	// Your definitions here.
-	files     []string
-	nReduce   int
-	jobFinish []bool // 弃用
+	files   []string
+	nReduce int
 
 	allJob map[MRJobType][]Job
 
 	// map job
 	mapJobFinish bool
 	mapJob       []Job
+
 	// reduce job
 	reduceJobFinish bool
 	reduceJob       []Job
+
 	// lock
 	lock sync.Mutex
 }
