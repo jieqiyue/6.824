@@ -86,6 +86,7 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 }
 
 func (kv *KVServer) MaintainState(args *PutAppendArgs, reply *PutAppendReply) {
+	reply.OpResult = true
 	// 如果map中没有这个clientId，可以认为是这个client首次发送的请求，此时直接设置ackSeq
 	if _, ok := kv.clientAck[args.ClientId]; !ok {
 		kv.clientAck[args.ClientId] = args.AckSeq
@@ -105,15 +106,21 @@ func (kv *KVServer) CheckWriteOpNecessary(args *PutAppendArgs, reply *PutAppendR
 
 	// 如果map中没有这个clientId，可以认为是这个client首次发送的请求，此时有必要进行OP操作
 	if _, ok := kv.clientAck[args.ClientId]; !ok {
-		return true
+		if args.AckSeq == 0 {
+			return true
+		}
+
+		reply.OpResult = false
+		return false
 	}
 
 	// 如果map中存放的这个clientId最后处理的ackSeq大于请求过来的ackS，那么可以认为这个请求是重复请求，直接丢弃
 	if value, ok := kv.clientAck[args.ClientId]; ok {
-		if value >= args.AckSeq {
-			return false
-		} else {
+		if value+1 == args.AckSeq {
 			return true
+		} else {
+			reply.OpResult = false
+			return false
 		}
 	}
 

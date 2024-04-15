@@ -12,7 +12,8 @@ type PutAppendArgs struct {
 }
 
 type PutAppendReply struct {
-	Value string
+	Value    string
+	OpResult bool
 }
 
 type GetArgs struct {

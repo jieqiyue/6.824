@@ -83,6 +83,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	for !ok {
 		//DPrintf("client.PutAppend receiver a fail reply, but not retry")
 		ok = ck.server.Call("KVServer."+op, &args, &reply)
+
+		if ok && !reply.OpResult {
+			ok = false
+		}
 	}
 
 	// 当成功之后，进行递增
