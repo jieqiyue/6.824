@@ -130,12 +130,13 @@ func (kv *KVServer) MaintainState(args *PutAppendArgs, reply *PutAppendReply) {
 
 func (kv *KVServer) CheckWriteOpNecessary(args *PutAppendArgs, reply *PutAppendReply) bool {
 	if args.AckSeq < 0 {
+		DPrintf("%s", "CheckWriteOpNecessary got a less 0 request")
 		return false
 	}
 
-	if args.AckSeq == 0 {
-		return true
-	}
+	//if args.AckSeq == 0 {
+	//	return true
+	//}
 
 	temp := fmt.Sprintf(ReqResTemplate, args.ClientId, args.AckSeq)
 	if value, ok := kv.reqRes[temp]; ok {
