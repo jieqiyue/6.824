@@ -1,6 +1,9 @@
 package kvsrv
 
-import "6.5840/labrpc"
+import (
+	"6.5840/labrpc"
+	"fmt"
+)
 import "crypto/rand"
 import "math/big"
 
@@ -89,6 +92,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 		}
 	}
 
+	ok = ck.server.Call("KVServer.FinishOp", &args, &reply)
+	if !ok {
+		fmt.Println("client log: can not delete mater mem")
+	}
 	// 当成功之后，进行递增
 	ck.ackSeq++
 
