@@ -7,10 +7,10 @@ package raft
 //
 // rf = Make(...)
 //   create a new Raft server.
-// rf.Start(command interface{}) (index, term, isleader)
+// rf.Start(command interface{}) (index, Term, isleader)
 //   start agreement on a new log entry
-// rf.GetState() (term, isLeader)
-//   ask a Raft for its current term, and whether it thinks it is leader
+// rf.GetState() (Term, isLeader)
+//   ask a Raft for its current Term, and whether it thinks it is leader
 // ApplyMsg
 //   each time a new entry is committed to the log, each Raft peer
 //   should send an ApplyMsg to the service (or tester)
@@ -27,7 +27,6 @@ import (
 	//	"6.5840/labgob"
 	"6.5840/labrpc"
 )
-
 
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -50,6 +49,22 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+// LogEntry 用来表示每条日志
+type LogEntry struct {
+	term  int    //  这个日志发出的leader的term是什么
+	index int64  // 这个日志在整体日志中的位置
+	data  []byte // 存储的LogEntry的数据
+}
+
+type ServerState int
+
+const (
+	UnknownState ServerState = iota // 未知状态
+	Leader                          // 领导者
+	Follower                        // 跟随者
+	Candidate                       // 候选者
+)
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -62,6 +77,21 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
+	state      ServerState
+	receiveNew bool
+
+	// persistent state
+	currentTerm int        // 当前任期
+	voteFor     int        // 当前任期的选票投给了哪个server
+	log         []LogEntry // 当前这个server中的所有日志
+
+	// volatile state
+	commitIndex int64 // 当前可以应用到状态机的日志为止
+	lastApplied int64 // 当前server已经应用到状态机的位置
+
+	// volatile state on leader
+	nextIndex  []int64 // 下一条要发送到各个client的日志的位置
+	matchIndex []int64 // 目前每个client已经匹配到的位置
 }
 
 // return currentTerm and whether this server
@@ -71,6 +101,15 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (3A).
+	isleader = false
+
+	rf.mu.Lock()
+	term = rf.currentTerm
+	if rf.state == Leader {
+		isleader = true
+	}
+	rf.mu.Unlock()
+
 	return term, isleader
 }
 
@@ -92,7 +131,6 @@ func (rf *Raft) persist() {
 	// rf.persister.Save(raftstate, nil)
 }
 
-
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
@@ -113,7 +151,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
 // service no longer needs the log through (and including)
@@ -123,22 +160,135 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 }
 
+type HeartBeatArgs struct {
+	// Your data here (3A, 3B).
+	Term        int
+	CandidateId int
+}
+
+type HeartBeatReply struct {
+	// Your data here (3A, 3B).
+	Term int
+}
 
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 type RequestVoteArgs struct {
 	// Your data here (3A, 3B).
+	Term         int
+	CandidateId  int
+	LastLogIndex int64
+	LastLogTerm  int
 }
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
 	// Your data here (3A).
+	Term        int
+	VoteGranted bool
 }
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	// 该函数是否需要先计算一下请求的args里面的日志和本地日志，哪个更新？先得出这个结论来，
+	// 因为如果仅仅靠着大term，是不能够获取到选票的。获取选票的关键还是要看日志哪个更新。因为有可能一个网络分区的节点，一直在投票，导致自己的term
+	// 非常大，然后忽然不分区了，重新加入集群之后，就会出现这种情况。
 	// Your code here (3A, 3B).
+	rf.mu.Lock()
+	defer func() {
+		if reply.VoteGranted == true {
+			rf.receiveNew = true
+			rf.state = Follower
+		}
+		rf.mu.Unlock()
+		DPrintf("server[%d] has finish request vote, request server is:%d, args term is:%d, result granted is:%v", rf.me, args.CandidateId, args.Term, reply.VoteGranted)
+	}()
+
+	DPrintf("server[%d] begin to handler vote request, local term is:%d, request server is:%d, request term is:%d,", rf.me, rf.currentTerm, args.CandidateId, args.Term)
+	reply.Term = rf.currentTerm
+	// 先判断两种特殊情况
+	// 1. 如果请求的term小于当前server的term，则返回false
+	if args.Term < rf.currentTerm {
+		reply.VoteGranted = false
+		DPrintf("server[%d]not granted to server %d, because args term less than me", rf.me, args.CandidateId)
+		return
+	}
+
+	// 这种情况应该要先处理，就是当请求的term大于当前的term的时候
+	if args.Term > rf.currentTerm {
+		rf.AddCurrentTerm(args.Term)
+	}
+
+	// 2. 如果请求的term等于当前的term，并且自己当前的voteFor字段等于args里面的candidateId
+	if args.Term == rf.currentTerm && rf.voteFor == args.CandidateId {
+		rf.voteFor = args.CandidateId
+		rf.receiveNew = true
+		reply.VoteGranted = true
+		return
+	}
+
+	// 3. 如果当前term已经投票过了的话，那么就返回false,因为一个任期最多只能投票一次
+	if rf.voteFor != -1 {
+		reply.VoteGranted = false
+		DPrintf("server[%d]not granted to server %d, because server has vote to %d", rf.me, args.CandidateId, rf.voteFor)
+		return
+	}
+
+	// 接下来判断日志是否至少跟自己一样新
+	localLastIndex := int64(0)
+	localLastTerm := 0
+
+	if len(rf.log) != 0 {
+		localLastIndex = rf.log[len(rf.log)-1].index
+		localLastTerm = rf.log[len(rf.log)-1].term
+	}
+
+	if args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex {
+		// todo 这里还是直接设置一下true，减少无效的选举，这个设置receiveNew是否需要移动到defer里面去
+		rf.receiveNew = true
+		rf.voteFor = args.CandidateId
+		reply.VoteGranted = true
+	} else {
+		DPrintf("server[%d]not granted to server %d, because local index is new than args", rf.me, args.CandidateId)
+		reply.VoteGranted = false
+	}
+}
+
+func (rf *Raft) RequestHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
+	// Your code here (3A, 3B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	reply.Term = rf.currentTerm
+	if args.Term > rf.currentTerm {
+		rf.AddCurrentTerm(args.Term)
+		return
+	}
+
+	if args.Term < rf.currentTerm {
+		DPrintf("server[%d] got a heart beat, but args term less than local term, request term is:%d", rf.me, args.Term)
+		return
+	}
+
+	rf.receiveNew = true
+	DPrintf("server[%d]got heart beat, reset timeout", rf.me)
+}
+
+// 此方法不使用锁保护，防止锁重入出现panic，需要调用方保证线程安全性
+func (rf *Raft) AddCurrentTerm(term int) {
+	// 验证代码，一般不会出现这种情况
+	if term <= rf.currentTerm {
+		DPrintf("error, AddCurrentTerm function get a %d Term, current Term is %d, this is not happen", term, rf.currentTerm)
+		return
+	}
+
+	// 新增任期，然后将term和state进行调整
+	rf.currentTerm = term
+	rf.state = Follower
+	// 虽然这个voteFor没有明确在论文中指出需要设置为什么值，这里我考虑是需要设置为-1的
+	rf.voteFor = -1
+	rf.receiveNew = true
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -173,6 +323,10 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
+func (rf *Raft) sendHeartBeat(server int, args *HeartBeatArgs, reply *HeartBeatReply) bool {
+	ok := rf.peers[server].Call("Raft.RequestHeartBeat", args, reply)
+	return ok
+}
 
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -184,7 +338,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 //
 // the first return value is the index that the command will appear at
 // if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
+// Term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
@@ -192,7 +346,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (3B).
-
 
 	return index, term, isLeader
 }
@@ -216,16 +369,161 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-func (rf *Raft) ticker() {
+func (rf *Raft) heartBeat() {
+	// 周期性的发送心跳消息，暂时不对返回值做处理
+	shouldSendHeartBeat := false
 	for rf.killed() == false {
+		heartBeatArgs := HeartBeatArgs{}
 
+		rf.mu.Lock()
+		shouldSendHeartBeat = false
+		if rf.state == Leader {
+			shouldSendHeartBeat = true
+			heartBeatArgs.CandidateId = rf.me
+			heartBeatArgs.Term = rf.currentTerm
+		}
+		rf.mu.Unlock()
+
+		if shouldSendHeartBeat {
+			for i, _ := range rf.peers {
+				if i == rf.me {
+					continue
+				}
+
+				go func(i int, args HeartBeatArgs) {
+					reply := HeartBeatReply{}
+					ok := rf.sendHeartBeat(i, &args, &reply)
+					if !ok {
+						DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v", rf.me, i, rf.state)
+					}
+					// todo 此处先不根据返回值来修改当前server的term值，有可能出现这样的情况：一个leader，独自发生了分区，然后他一直给
+					// todo 其它的server发送心跳。此时其它server已经进行了新的选举了，所以其它server的term可能比当前server的大，但是
+					// todo 此处并不根据这个心跳返回的term来更新本地server，而是希望通过新领导者的appendEntries或者是心跳请求来更新本地
+					// todo 的term。
+				}(i, heartBeatArgs)
+			}
+		}
+
+		ms := 150
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
+}
+
+func (rf *Raft) ticker() {
+	shouldElection := false
+	for rf.killed() == false {
 		// Your code here (3A)
 		// Check if a leader election should be started.
+		// 此处只需要args，args可以共用，但是reply得是每一个goroutine新建立的
+		var args RequestVoteArgs
 
+		rf.mu.Lock()
+		shouldElection = false
+
+		DPrintf("server[%d]begin a new ticker, local state is:%v, and receiveNew is:%v", rf.me, rf.state, rf.receiveNew)
+		// todo  此处是否是这两个状态呢？如果某一个节点是候选者，并且在某一次选举中，并没有成为follower的话，就需要继续选举
+		// todo 所以这里也依赖这个receiveNew，这个receiveNew需要在接收到新heartBeat或者是appendEntries的时候更新
+		if !rf.receiveNew && (rf.state == Follower || rf.state == Candidate) {
+			DPrintf("server[%d]should begin a election", rf.me)
+			shouldElection = true
+			rf.currentTerm++
+			rf.state = Candidate
+			rf.voteFor = rf.me
+			DPrintf("server[%d]has vote for himself, term is:%d", rf.me, rf.currentTerm)
+
+			args = RequestVoteArgs{
+				Term:        rf.currentTerm,
+				CandidateId: rf.me,
+			}
+
+			// 如果当前是空日志的话
+			if len(rf.log) == 0 {
+				args.LastLogIndex = 0
+				// todo 此处应该要设置为0，还是用rf里面的currentTerm
+				args.LastLogTerm = 0
+			} else {
+				tempLog := rf.log[len(rf.log)-1]
+				args.LastLogTerm = tempLog.term
+				args.LastLogIndex = tempLog.index
+			}
+		}
+		rf.mu.Unlock()
+
+		// 在发送RPC之前释放锁，防止死锁
+		if shouldElection {
+			// 由于RPC已经含有了超时的功能，所以此处直接使用waitGroup，不用担心某一个节点不可达，导致reply一直收不到的情况
+			//wg := sync.WaitGroup{}
+			cond := sync.NewCond(&rf.mu)
+			finishRequest := 1
+			voteCount := 1
+			rpcFailCount := 0
+
+			for i, _ := range rf.peers {
+				if i == rf.me {
+					continue
+				}
+
+				//wg.Add(1)
+				go func(i int, args RequestVoteArgs) {
+					// 此处的reply必须每个goroutine都使用不同的
+					reply := RequestVoteReply{}
+					// 注意这里的i要使用外部传入的参数，不能直接使用闭包
+					ok := rf.sendRequestVote(i, &args, &reply)
+
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
+					finishRequest++
+					if ok {
+						if reply.VoteGranted {
+							voteCount++
+						}
+					} else {
+						rpcFailCount++
+					}
+					cond.Broadcast()
+				}(i, args)
+			}
+
+			//wg.Wait()
+			rf.mu.Lock()
+			for voteCount <= (len(rf.peers)/2) || finishRequest < len(rf.peers) {
+				DPrintf("server[%d]is going to wait.....777 ", rf.me)
+				cond.Wait()
+				DPrintf("server[%d]is going to for loop.....666, voteCount is:%d, finish request is:%d, "+
+					"len of peers is:%d", rf.me, voteCount, finishRequest, len(rf.peers))
+			}
+			DPrintf("server[%d]is going to sleep.....555", rf.me)
+			DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request", rf.me, voteCount, rpcFailCount, finishRequest)
+			// 接下来要根据投票的结果来修改本地的状态了
+			if rf.currentTerm == args.Term && rf.state == Candidate {
+				if voteCount > len(rf.peers)/2 {
+					rf.state = Leader
+					DPrintf("server[%d], become a leader, got %d tickets", rf.me, voteCount)
+				}
+			}
+			DPrintf("server[%d]is going to sleep.....444", rf.me)
+			rf.mu.Unlock()
+			DPrintf("server[%d]is going to sleep.....333", rf.me)
+		}
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
-		ms := 50 + (rand.Int63() % 300)
+		// 需要在这里重置一下是否收到新消息,防止receiveNew一直为true，然后不执行新的选举
+		// 这个是不是只能放在外面吧。
+		DPrintf("server[%d]is going to sleep.....111", rf.me)
+		rf.mu.Lock()
+		rf.receiveNew = false
+		rf.mu.Unlock()
+
+		DPrintf("server[%d]is going to sleep.....222", rf.me)
+		/*
+			如果总结哪些地方需要更新receiveNew呢？
+			1. 收到投票请求，然后自己投了赞成票了，此时需要重置定时器，如果发现请求投票的server的term比自己小的话，是不会投票的，
+				此时也不需要重置定时器。
+			2. 作为一个follower，当收到leader发来的消息的时候
+		*/
+
+		ms := 150 + (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
 }
@@ -248,12 +546,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (3A, 3B, 3C).
 
+	// 启动的时候，服务器应该是跟随者的状态
+	rf.state = Follower
+	rf.currentTerm = 0
+	// todo 此处不能设置为true，不然第一个测试会过不了
+	//rf.receiveNew = true
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
 
+	go rf.heartBeat()
 
 	return rf
 }
