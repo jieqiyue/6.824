@@ -486,7 +486,7 @@ func (rf *Raft) ticker() {
 
 			//wg.Wait()
 			rf.mu.Lock()
-			for voteCount <= (len(rf.peers)/2) || finishRequest < len(rf.peers) {
+			for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) {
 				DPrintf("server[%d]is going to wait.....777 ", rf.me)
 				cond.Wait()
 				DPrintf("server[%d]is going to for loop.....666, voteCount is:%d, finish request is:%d, "+
