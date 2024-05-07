@@ -133,10 +133,13 @@ test script, make leader2 and leader 2+1 disconnects ...... leader2+1 is: 1
 2024/05/07 16:56:53 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
 2024/05/07 16:56:53 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
 2024/05/07 16:56:53 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+
 begin to test no leader for test3A 4 is success?
 TestReElection3A 4 success 
 test script, make leader2+1 back to cluster, it should elect a leader ......
 begin to test one leader only for test3A 4 is success?
+
+
 2024/05/07 16:56:53 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
 2024/05/07 16:56:53 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
 2024/05/07 16:56:54 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
@@ -181,28 +184,17 @@ begin to test one leader only for test3A 4 is success?
 2024/05/07 16:56:57 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
 2024/05/07 16:56:57 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
 2024/05/07 16:56:57 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
+
 2024/05/07 16:56:57 server[2]begin a new ticker, local state is:3, local term is:4, and receiveNew is:false
 2024/05/07 16:56:57 server[2]should begin a election
 2024/05/07 16:56:57 server[2]has vote for himself, term is:5
+
 2024/05/07 16:56:57 server[1] recive 2 server vote request, args term is:5
 2024/05/07 16:56:57 server[1] recive 2 server vote request, args term is:5, get lock success
 2024/05/07 16:56:57 server[1] begin to handler vote request, local term is:5, request server is:2, request term is:5,
 2024/05/07 16:56:57 server[1]not granted to server 2, because server has vote to 1
 2024/05/07 16:56:57 server[1] has finish request vote, request server is:2, args term is:5, result granted is:false
-2024/05/07 16:56:57 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
-2024/05/07 16:56:57 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:57 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:57 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:57 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:57 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
-2024/05/07 16:56:58 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
-2024/05/07 16:56:58 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
-2024/05/07 16:56:58 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+
+
 --- FAIL: TestReElection3A (8.96s)
     config.go:454: expected one leader, got none

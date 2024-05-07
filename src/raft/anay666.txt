@@ -1,0 +1,231 @@
+Test (3A): election after network failure ...
+2024/05/07 19:42:58 server[1]begin a new ticker, local state is:2, local term is:0, and receiveNew is:false
+2024/05/07 19:42:58 server[1]should begin a election
+2024/05/07 19:42:58 server[1]has vote for himself, term is:1
+2024/05/07 19:42:58 server[2]begin a new ticker, local state is:2, local term is:0, and receiveNew is:false
+2024/05/07 19:42:58 server[2]should begin a election
+2024/05/07 19:42:58 server[2]has vote for himself, term is:1
+2024/05/07 19:42:58 server[0]begin a new ticker, local state is:2, local term is:0, and receiveNew is:false
+2024/05/07 19:42:58 server[0]should begin a election
+2024/05/07 19:42:58 server[0]has vote for himself, term is:1
+2024/05/07 19:42:58 server[1] recive 2 server vote request, args term is:1
+2024/05/07 19:42:58 server[1] recive 2 server vote request, args term is:1, get lock success
+2024/05/07 19:42:58 server[1] begin to handler vote request, local term is:1, request server is:2, request term is:1,
+2024/05/07 19:42:58 server[1]not granted to server 2, because server has vote to 1
+2024/05/07 19:42:58 server[1] has finish request vote, request server is:2, args term is:1, result granted is:false
+2024/05/07 19:42:58 server[0] recive 1 server vote request, args term is:1
+2024/05/07 19:42:58 server[0] recive 1 server vote request, args term is:1, get lock success
+2024/05/07 19:42:58 server[0] recive 2 server vote request, args term is:1
+2024/05/07 19:42:58 server[0] begin to handler vote request, local term is:1, request server is:1, request term is:1,
+2024/05/07 19:42:58 server[0]not granted to server 1, because server has vote to 0
+2024/05/07 19:42:58 server[0] has finish request vote, request server is:1, args term is:1, result granted is:false
+2024/05/07 19:42:58 server[2] got server 1 vote respone, args term is:1,reply grante:false, is ok? true, not get lock
+2024/05/07 19:42:58 server[2] got server 1 vote respone, args term is:1,reply grante:false, is ok? true, get lock success
+2024/05/07 19:42:58 server[2] recive 0 server vote request, args term is:1
+2024/05/07 19:42:58 server[2] wait walk up, voteCount is:1, finishRequest:2,len/2 is:1, vote plus finish is:2
+2024/05/07 19:42:58 server[0] recive 2 server vote request, args term is:1, get lock success
+2024/05/07 19:42:58 server[2] recive 0 server vote request, args term is:1, get lock success
+2024/05/07 19:42:58 server[2] begin to handler vote request, local term is:1, request server is:0, request term is:1,
+2024/05/07 19:42:58 server[2]not granted to server 0, because server has vote to 2
+2024/05/07 19:42:58 server[2] has finish request vote, request server is:0, args term is:1, result granted is:false
+2024/05/07 19:42:58 server[1] got server 0 vote respone, args term is:1,reply grante:false, is ok? true, not get lock
+2024/05/07 19:42:58 server[1] got server 0 vote respone, args term is:1,reply grante:false, is ok? true, get lock success
+2024/05/07 19:42:58 server[1] wait walk up, voteCount is:1, finishRequest:2,len/2 is:1, vote plus finish is:2
+2024/05/07 19:42:58 server[2] recive 1 server vote request, args term is:1
+2024/05/07 19:42:58 server[2] recive 1 server vote request, args term is:1, get lock success
+2024/05/07 19:42:58 server[2] begin to handler vote request, local term is:1, request server is:1, request term is:1,
+2024/05/07 19:42:58 server[2]not granted to server 1, because server has vote to 2
+2024/05/07 19:42:58 server[2] has finish request vote, request server is:1, args term is:1, result granted is:false
+2024/05/07 19:42:58 server[1] recive 0 server vote request, args term is:1
+2024/05/07 19:42:58 server[1] recive 0 server vote request, args term is:1, get lock success
+2024/05/07 19:42:58 server[1] begin to handler vote request, local term is:1, request server is:0, request term is:1,
+2024/05/07 19:42:58 server[1]not granted to server 0, because server has vote to 1
+2024/05/07 19:42:58 server[1] has finish request vote, request server is:0, args term is:1, result granted is:false
+2024/05/07 19:42:58 server[0] got server 2 vote respone, args term is:1,reply grante:false, is ok? true, not get lock
+2024/05/07 19:42:58 server[0] begin to handler vote request, local term is:1, request server is:2, request term is:1,
+2024/05/07 19:42:58 server[0]not granted to server 2, because server has vote to 0
+2024/05/07 19:42:58 server[0] has finish request vote, request server is:2, args term is:1, result granted is:false
+2024/05/07 19:42:58 server[0] got server 1 vote respone, args term is:1,reply grante:false, is ok? true, not get lock
+2024/05/07 19:42:58 server[0] got server 1 vote respone, args term is:1,reply grante:false, is ok? true, get lock success
+2024/05/07 19:42:58 server[0] wait walk up, voteCount is:1, finishRequest:2,len/2 is:1, vote plus finish is:2
+2024/05/07 19:42:58 server[1] got server 2 vote respone, args term is:1,reply grante:false, is ok? true, not get lock
+2024/05/07 19:42:58 server[1] got server 2 vote respone, args term is:1,reply grante:false, is ok? true, get lock success
+2024/05/07 19:42:58 server[0] got server 2 vote respone, args term is:1,reply grante:false, is ok? true, get lock success
+2024/05/07 19:42:58 server[0] wait walk up, voteCount is:1, finishRequest:3,len/2 is:1, vote plus finish is:1
+2024/05/07 19:42:58 server[0], vote for leader, got 1 tickets, got 0 failRpc, total 3 request, args term is:1
+2024/05/07 19:42:58 server[1] wait walk up, voteCount is:1, finishRequest:3,len/2 is:1, vote plus finish is:1
+2024/05/07 19:42:58 server[1], vote for leader, got 1 tickets, got 0 failRpc, total 3 request, args term is:1
+2024/05/07 19:42:58 server[2] got server 0 vote respone, args term is:1,reply grante:false, is ok? true, not get lock
+2024/05/07 19:42:58 server[2] got server 0 vote respone, args term is:1,reply grante:false, is ok? true, get lock success
+2024/05/07 19:42:58 server[2] wait walk up, voteCount is:1, finishRequest:3,len/2 is:1, vote plus finish is:1
+2024/05/07 19:42:58 server[2], vote for leader, got 1 tickets, got 0 failRpc, total 3 request, args term is:1
+
+==== server 0开始进行term为2的选举
+2024/05/07 19:42:58 server[0]begin a new ticker, local state is:3, local term is:1, and receiveNew is:false
+2024/05/07 19:42:58 server[0]should begin a election
+2024/05/07 19:42:58 server[0]has vote for himself, term is:2
+
+2024/05/07 19:42:58 server[2] recive 0 server vote request, args term is:2
+2024/05/07 19:42:58 server[2] recive 0 server vote request, args term is:2, get lock success
+2024/05/07 19:42:58 server[2] begin to handler vote request, local term is:1, request server is:0, request term is:2,
+2024/05/07 19:42:58 server[2] has finish request vote, request server is:0, args term is:2, result granted is:true
+
+2024/05/07 19:42:58 server[0] got server 2 vote respone, args term is:2,reply grante:true, is ok? true, not get lock
+2024/05/07 19:42:58 server[0] got server 2 vote respone, args term is:2,reply grante:true, is ok? true, get lock success
+2024/05/07 19:42:58 server[0] wait walk up, voteCount is:2, finishRequest:2,len/2 is:1, vote plus finish is:3
+2024/05/07 19:42:58 server[0], vote for leader, got 2 tickets, got 0 failRpc, total 2 request, args term is:2
+2024/05/07 19:42:58 server[0], become a leader, got 2 tickets
+
+=== server0成为了term为2的leader
+2024/05/07 19:42:58 server[1] recive 0 server vote request, args term is:2
+2024/05/07 19:42:58 server[1] recive 0 server vote request, args term is:2, get lock success
+2024/05/07 19:42:58 server[1] begin to handler vote request, local term is:1, request server is:0, request term is:2,
+2024/05/07 19:42:58 server[1] has finish request vote, request server is:0, args term is:2, result granted is:true
+2024/05/07 19:42:58 server[0] got server 1 vote respone, args term is:2,reply grante:true, is ok? true, not get lock
+2024/05/07 19:42:58 server[0] got server 1 vote respone, args term is:2,reply grante:true, is ok? true, get lock success
+2024/05/07 19:42:58 server[1]got heart beat, reset timeout, local term is:2, local status is:2, args server id is:0, args term is:2
+2024/05/07 19:42:58 server[2]got heart beat, reset timeout, local term is:2, local status is:2, args server id is:0, args term is:2
+2024/05/07 19:42:58 server[0]begin a new ticker, local state is:1, local term is:2, and receiveNew is:false
+2024/05/07 19:42:58 server[1]begin a new ticker, local state is:2, local term is:2, and receiveNew is:true
+2024/05/07 19:42:58 server[2]begin a new ticker, local state is:2, local term is:2, and receiveNew is:true
+2024/05/07 19:42:58 server[2]got heart beat, reset timeout, local term is:2, local status is:2, args server id is:0, args term is:2
+2024/05/07 19:42:58 server[1]got heart beat, reset timeout, local term is:2, local status is:2, args server id is:0, args term is:2
+
+TestReElection3A 0 success, leader is: 0
+test script, make leader1 disconnects ...... leader1 is: 0
+
+=== 将server0断连
+2024/05/07 19:42:58 server[1]begin a new ticker, local state is:2, local term is:2, and receiveNew is:true
+2024/05/07 19:42:59 server[0]begin a new ticker, local state is:1, local term is:2, and receiveNew is:false
+2024/05/07 19:42:59 server[2]begin a new ticker, local state is:2, local term is:2, and receiveNew is:true
+2024/05/07 19:42:59 server[1]begin a new ticker, local state is:2, local term is:2, and receiveNew is:false
+2024/05/07 19:42:59 server[1]should begin a election
+2024/05/07 19:42:59 server[1]has vote for himself, term is:3
+
+2024/05/07 19:42:59 server[2] recive 1 server vote request, args term is:3
+2024/05/07 19:42:59 server[2] recive 1 server vote request, args term is:3, get lock success
+2024/05/07 19:42:59 server[2] begin to handler vote request, local term is:2, request server is:1, request term is:3,
+2024/05/07 19:42:59 server[2] has finish request vote, request server is:1, args term is:3, result granted is:true
+
+2024/05/07 19:42:59 server[1] got server 2 vote respone, args term is:3,reply grante:true, is ok? true, not get lock
+2024/05/07 19:42:59 server[1] got server 2 vote respone, args term is:3,reply grante:true, is ok? true, get lock success
+2024/05/07 19:42:59 server[1] wait walk up, voteCount is:2, finishRequest:2,len/2 is:1, vote plus finish is:3
+2024/05/07 19:42:59 server[1], vote for leader, got 2 tickets, got 0 failRpc, total 2 request, args term is:3
+2024/05/07 19:42:59 server[1], become a leader, got 2 tickets
+
+=== server1成为了leader，term为3
+2024/05/07 19:42:59 server[2]got heart beat, reset timeout, local term is:3, local status is:2, args server id is:1, args term is:3
+2024/05/07 19:42:59 server[0]begin a new ticker, local state is:1, local term is:2, and receiveNew is:false
+TestReElection3A 1 success 
+test script, make leader1 connect ...... leader1 is: 0
+
+=== 将原来term为2的server0重新连接，此时server1为term为3的leader
+2024/05/07 19:42:59 server[2] got a heart beat, but args term less than local term, request term is:2, request server id is:0
+2024/05/07 19:42:59 server[0] got a heart beat, and args term is bigger than local term, args term:3, args server id:1, local term:2
+2024/05/07 19:42:59 server[1] got a heart beat, but args term less than local term, request term is:2, request server id is:0
+2024/05/07 19:42:59 server[2]got heart beat, reset timeout, local term is:3, local status is:2, args server id is:1, args term is:3
+2024/05/07 19:42:59 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:42:59 server[2]got heart beat, reset timeout, local term is:3, local status is:2, args server id is:1, args term is:3
+2024/05/07 19:42:59 server[0]got heart beat, reset timeout, local term is:3, local status is:2, args server id is:1, args term is:3
+2024/05/07 19:42:59 server[0]begin a new ticker, local state is:2, local term is:3, and receiveNew is:true
+2024/05/07 19:42:59 server[2]begin a new ticker, local state is:2, local term is:3, and receiveNew is:true
+2024/05/07 19:42:59 server[2]got heart beat, reset timeout, local term is:3, local status is:2, args server id is:1, args term is:3
+2024/05/07 19:42:59 server[0]got heart beat, reset timeout, local term is:3, local status is:2, args server id is:1, args term is:3
+2024/05/07 19:42:59 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+
+=== 此时server1为term为3的leader，server0和server2是follower
+TestReElection3A 2 success 
+test script, make leader2 disconnects ...... leader2 is: 1
+test script, make leader2 and leader 2+1 disconnects ...... leader2+1 is: 2
+
+=== 将server1和server2断开连接，将server0留在集群中
+2024/05/07 19:42:59 server[0]begin a new ticker, local state is:2, local term is:3, and receiveNew is:true
+2024/05/07 19:43:00 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:00 server[2]begin a new ticker, local state is:2, local term is:3, and receiveNew is:true
+2024/05/07 19:43:00 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:00 server[2]begin a new ticker, local state is:2, local term is:3, and receiveNew is:false
+2024/05/07 19:43:00 server[2]should begin a election
+2024/05/07 19:43:00 server[2]has vote for himself, term is:4
+2024/05/07 19:43:00 server[0]begin a new ticker, local state is:2, local term is:3, and receiveNew is:false
+2024/05/07 19:43:00 server[0]should begin a election
+2024/05/07 19:43:00 server[0]has vote for himself, term is:4
+
+begin to test no leader for test3A 4 is success?
+TestReElection3A 4 success 
+test script, make leader2+1 back to cluster, it should elect a leader ......
+begin to test one leader only for test3A 4 is success?
+
+=== 将server2重新加入集群，此时集群中有2和0
+2024/05/07 19:43:01 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:01 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:02 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:02 server[2] got server 1 vote respone, args term is:4,reply grante:false, is ok? false, not get lock
+2024/05/07 19:43:02 server[2] got server 1 vote respone, args term is:4,reply grante:false, is ok? false, get lock success
+2024/05/07 19:43:02 server[2] wait walk up, voteCount is:1, finishRequest:2,len/2 is:1, vote plus finish is:2
+2024/05/07 19:43:02 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:02 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:2
+2024/05/07 19:43:02 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:02 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:03 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:2
+2024/05/07 19:43:03 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:2
+2024/05/07 19:43:03 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:03 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:03 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:03 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:04 server[0] got server 1 vote respone, args term is:4,reply grante:false, is ok? false, not get lock
+2024/05/07 19:43:04 server[0] got server 1 vote respone, args term is:4,reply grante:false, is ok? false, get lock success
+2024/05/07 19:43:04 server[0] wait walk up, voteCount is:1, finishRequest:2,len/2 is:1, vote plus finish is:2
+2024/05/07 19:43:04 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:04 server[1] got server 0 vote respone, args term is:3,reply grante:false, is ok? false, not get lock
+2024/05/07 19:43:04 server[1] got server 0 vote respone, args term is:3,reply grante:false, is ok? false, get lock success
+2024/05/07 19:43:04 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:04 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:04 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:04 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:04 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:04 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:05 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:05 server[0] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:2
+2024/05/07 19:43:05 server[0] send heart beat to 1, bug get fail,i am a leader? status:1, args term is:2
+2024/05/07 19:43:05 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:05 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:05 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:05 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:06 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:06 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:06 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:06 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:06 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:06 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:06 server[1]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 19:43:06 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, args term is:3
+2024/05/07 19:43:06 server[2] got server 0 vote respone, args term is:4,reply grante:false, is ok? false, not get lock
+2024/05/07 19:43:06 server[2] got server 0 vote respone, args term is:4,reply grante:false, is ok? false, get lock success
+2024/05/07 19:43:06 server[2] wait walk up, voteCount is:1, finishRequest:3,len/2 is:1, vote plus finish is:1
+2024/05/07 19:43:06 server[2], vote for leader, got 1 tickets, got 2 failRpc, total 3 request, args term is:4
+--- FAIL: TestReElection3A (8.42s)
+    config.go:454: expected one leader, got none

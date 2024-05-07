@@ -486,13 +486,20 @@ func (rf *Raft) ticker() {
 					// 注意这里的i要使用外部传入的参数，不能直接使用闭包
 					ok := rf.sendRequestVote(i, &args, &reply)
 
+					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					finishRequest++
-					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v", rf.me, i, args.Term, reply.VoteGranted)
+					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
 					if ok {
 						if reply.VoteGranted {
 							voteCount++
+						}
+
+						if reply.Term > rf.currentTerm {
+							DPrintf("server[%d]request for leader, but server:%d, "+
+								"response term:%d is bigger than local term:%d, so change local term to new", rf.me, i, reply.Term, rf.currentTerm)
+							rf.AddCurrentTerm(reply.Term)
 						}
 					} else {
 						rpcFailCount++
@@ -509,7 +516,7 @@ func (rf *Raft) ticker() {
 			// 原来的判断条件中，需要所有的节点都回复才能跳出循环。
 			for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) && voteCount+(len(rf.peers)-finishRequest) > (len(rf.peers)/2) {
 				cond.Wait()
-				DPrintf("wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
+				DPrintf("server[%d] wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", rf.me, voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
 			}
 			//DPrintf("server[%d]is going to sleep.....555", rf.me)
 			DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
