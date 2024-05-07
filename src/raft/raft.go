@@ -489,6 +489,7 @@ func (rf *Raft) ticker() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					finishRequest++
+					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v", rf.me, i, args.Term, reply.VoteGranted)
 					if ok {
 						if reply.VoteGranted {
 							voteCount++
@@ -507,10 +508,8 @@ func (rf *Raft) ticker() {
 			// 考虑一个3server组成的一个集群的情况：分别是 0，1，2三个机器。0机器是离线的，分区了。然后集群中只有1，2两台机器能互相通信。此时1开始选举，选举的term为5，2也开始选举，term也为5，
 			// 原来的判断条件中，需要所有的节点都回复才能跳出循环。
 			for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) && voteCount+(len(rf.peers)-finishRequest) > (len(rf.peers)/2) {
-				//DPrintf("server[%d]is going to wait.....777 ", rf.me)
 				cond.Wait()
-				//DPrintf("server[%d]is going to for loop.....666, voteCount is:%d, finish request is:%d, "+
-				//	"len of peers is:%d", rf.me, voteCount, finishRequest, len(rf.peers))
+				DPrintf("wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
 			}
 			//DPrintf("server[%d]is going to sleep.....555", rf.me)
 			DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
