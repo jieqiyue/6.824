@@ -56,37 +56,50 @@ func TestReElection3A(t *testing.T) {
 	defer cfg.cleanup()
 
 	cfg.begin("Test (3A): election after network failure")
-
+	// 1. 一开始是在有网络问题的情况下启动的，需要测试在网络有问题的情况下，能不能够选举出一个leader
 	leader1 := cfg.checkOneLeader()
 	fmt.Println("TestReElection3A 0 success, leader is:", leader1)
 	// if the leader disconnects, a new one should be elected.
+	fmt.Println("test script, make leader1 disconnects ...... leader1 is:", leader1)
 	cfg.disconnect(leader1)
+	// 2. 将第一次选举出来的领导人下线，看是否能够继续成功选举出一个leader
 	cfg.checkOneLeader()
 	fmt.Println("TestReElection3A 1 success ")
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
+	fmt.Println("test script, make leader1 connect ...... leader1 is:", leader1)
 	cfg.connect(leader1)
+	// 3. 将
 	leader2 := cfg.checkOneLeader()
 	fmt.Println("TestReElection3A 2 success ")
 	// if there's no quorum, no new leader should
 	// be elected.
+
+	fmt.Println("test script, make leader2 disconnects ...... leader2 is:", leader2)
 	cfg.disconnect(leader2)
+	fmt.Println("test script, make leader2 and leader 2+1 disconnects ...... leader2+1 is:", (leader2+1)%servers)
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
 
 	// check that the one connected server
 	// does not think it is the leader.
+	fmt.Println("begin to test no leader for test3A 4 is success?")
 	cfg.checkNoLeader()
 	fmt.Println("TestReElection3A 4 success ")
 	// if a quorum arises, it should elect a leader.
+	fmt.Println("test script, make leader2+1 back to cluster, it should elect a leader ......")
 	cfg.connect((leader2 + 1) % servers)
+	fmt.Println("begin to test one leader only for test3A 4 is success?")
 	cfg.checkOneLeader()
 
 	// re-join of last node shouldn't prevent leader from existing.
+	fmt.Println("leader2 rejoin to cluster")
 	cfg.connect(leader2)
+	fmt.Println("begin to test only one leader")
 	cfg.checkOneLeader()
 
+	fmt.Println("TestReElection3A all finish ......")
 	cfg.end()
 }
 

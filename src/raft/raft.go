@@ -195,14 +195,16 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 因为如果仅仅靠着大term，是不能够获取到选票的。获取选票的关键还是要看日志哪个更新。因为有可能一个网络分区的节点，一直在投票，导致自己的term
 	// 非常大，然后忽然不分区了，重新加入集群之后，就会出现这种情况。
 	// Your code here (3A, 3B).
+	DPrintf("server[%d] recive %d server vote request, args term is:%d", rf.me, args.CandidateId, args.Term)
 	rf.mu.Lock()
+	DPrintf("server[%d] recive %d server vote request, args term is:%d, get lock success", rf.me, args.CandidateId, args.Term)
 	defer func() {
 		if reply.VoteGranted == true {
 			rf.receiveNew = true
 			rf.state = Follower
 		}
-		rf.mu.Unlock()
 		DPrintf("server[%d] has finish request vote, request server is:%d, args term is:%d, result granted is:%v", rf.me, args.CandidateId, args.Term, reply.VoteGranted)
+		rf.mu.Unlock()
 	}()
 
 	DPrintf("server[%d] begin to handler vote request, local term is:%d, request server is:%d, request term is:%d,", rf.me, rf.currentTerm, args.CandidateId, args.Term)
@@ -223,7 +225,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 2. 如果请求的term等于当前的term，并且自己当前的voteFor字段等于args里面的candidateId
 	if args.Term == rf.currentTerm && rf.voteFor == args.CandidateId {
 		rf.voteFor = args.CandidateId
-		rf.receiveNew = true
+		//rf.receiveNew = true
 		reply.VoteGranted = true
 		return
 	}
@@ -246,7 +248,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex {
 		// todo 这里还是直接设置一下true，减少无效的选举，这个设置receiveNew是否需要移动到defer里面去
-		rf.receiveNew = true
+		//rf.receiveNew = true
 		rf.voteFor = args.CandidateId
 		reply.VoteGranted = true
 	} else {
@@ -261,18 +263,26 @@ func (rf *Raft) RequestHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 	defer rf.mu.Unlock()
 
 	reply.Term = rf.currentTerm
+
+	if args.Term < rf.currentTerm {
+		DPrintf("server[%d] got a heart beat, but args term less than local term, request term is:%d, request server id is:%d", rf.me, args.Term, args.CandidateId)
+		return
+	}
+
+	if args.Term == rf.currentTerm && rf.state == Candidate {
+		DPrintf("server[%d] got a heart beat, local status is Candidate, but args server:%d send a heart beat,so change local state to follower", rf.me, args.CandidateId)
+		rf.state = Follower
+	}
+
+	// 当请求的term大于本地的term的时候，就证明自己收到了更高的term的心跳，此时应该将自身转为follower，并且修改自身的term。
 	if args.Term > rf.currentTerm {
+		DPrintf("server[%d] got a heart beat, and args term is bigger than local term, args term:%d, args server id:%d, local term:%d", rf.me, args.Term, args.CandidateId, rf.currentTerm)
 		rf.AddCurrentTerm(args.Term)
 		return
 	}
 
-	if args.Term < rf.currentTerm {
-		DPrintf("server[%d] got a heart beat, but args term less than local term, request term is:%d", rf.me, args.Term)
-		return
-	}
-
 	rf.receiveNew = true
-	DPrintf("server[%d]got heart beat, reset timeout", rf.me)
+	DPrintf("server[%d]got heart beat, reset timeout, local term is:%d, local status is:%d, args server id is:%d, args term is:%d", rf.me, rf.currentTerm, rf.state, args.CandidateId, args.Term)
 }
 
 // 此方法不使用锁保护，防止锁重入出现panic，需要调用方保证线程安全性
@@ -382,6 +392,11 @@ func (rf *Raft) heartBeat() {
 			heartBeatArgs.CandidateId = rf.me
 			heartBeatArgs.Term = rf.currentTerm
 		}
+		// for log
+		serverId := rf.me
+		serverState := rf.state
+		//randNum := rand.Int63()
+		// end
 		rf.mu.Unlock()
 
 		if shouldSendHeartBeat {
@@ -394,7 +409,8 @@ func (rf *Raft) heartBeat() {
 					reply := HeartBeatReply{}
 					ok := rf.sendHeartBeat(i, &args, &reply)
 					if !ok {
-						DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v", rf.me, i, rf.state)
+						// 针对已经不是leader的server还是会发心跳这个问题，可以把这个请求的args里面的term给打印出来，这样就能知道了
+						DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v, args term is:%d", serverId, i, serverState, args.Term)
 					}
 					// todo 此处先不根据返回值来修改当前server的term值，有可能出现这样的情况：一个leader，独自发生了分区，然后他一直给
 					// todo 其它的server发送心跳。此时其它server已经进行了新的选举了，所以其它server的term可能比当前server的大，但是
@@ -420,7 +436,7 @@ func (rf *Raft) ticker() {
 		rf.mu.Lock()
 		shouldElection = false
 
-		DPrintf("server[%d]begin a new ticker, local state is:%v, and receiveNew is:%v", rf.me, rf.state, rf.receiveNew)
+		DPrintf("server[%d]begin a new ticker, local state is:%v, local term is:%d, and receiveNew is:%v", rf.me, rf.state, rf.currentTerm, rf.receiveNew)
 		// todo  此处是否是这两个状态呢？如果某一个节点是候选者，并且在某一次选举中，并没有成为follower的话，就需要继续选举
 		// todo 所以这里也依赖这个receiveNew，这个receiveNew需要在接收到新heartBeat或者是appendEntries的时候更新
 		if !rf.receiveNew && (rf.state == Follower || rf.state == Candidate) {
@@ -486,14 +502,18 @@ func (rf *Raft) ticker() {
 
 			//wg.Wait()
 			rf.mu.Lock()
-			for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) {
-				DPrintf("server[%d]is going to wait.....777 ", rf.me)
+			// 退出循环的条件
+			// 1. 过半节点同意   2. 所有请求都已经回复了
+			// 考虑一个3server组成的一个集群的情况：分别是 0，1，2三个机器。0机器是离线的，分区了。然后集群中只有1，2两台机器能互相通信。此时1开始选举，选举的term为5，2也开始选举，term也为5，
+			// 原来的判断条件中，需要所有的节点都回复才能跳出循环。
+			for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) && voteCount+(len(rf.peers)-finishRequest) > (len(rf.peers)/2) {
+				//DPrintf("server[%d]is going to wait.....777 ", rf.me)
 				cond.Wait()
-				DPrintf("server[%d]is going to for loop.....666, voteCount is:%d, finish request is:%d, "+
-					"len of peers is:%d", rf.me, voteCount, finishRequest, len(rf.peers))
+				//DPrintf("server[%d]is going to for loop.....666, voteCount is:%d, finish request is:%d, "+
+				//	"len of peers is:%d", rf.me, voteCount, finishRequest, len(rf.peers))
 			}
-			DPrintf("server[%d]is going to sleep.....555", rf.me)
-			DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request", rf.me, voteCount, rpcFailCount, finishRequest)
+			//DPrintf("server[%d]is going to sleep.....555", rf.me)
+			DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
 			// 接下来要根据投票的结果来修改本地的状态了
 			if rf.currentTerm == args.Term && rf.state == Candidate {
 				if voteCount > len(rf.peers)/2 {
@@ -501,21 +521,21 @@ func (rf *Raft) ticker() {
 					DPrintf("server[%d], become a leader, got %d tickets", rf.me, voteCount)
 				}
 			}
-			DPrintf("server[%d]is going to sleep.....444", rf.me)
+			//DPrintf("server[%d]is going to sleep.....444", rf.me)
 			rf.mu.Unlock()
-			DPrintf("server[%d]is going to sleep.....333", rf.me)
+			//DPrintf("server[%d]is going to sleep.....333", rf.me)
 		}
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		// 需要在这里重置一下是否收到新消息,防止receiveNew一直为true，然后不执行新的选举
 		// 这个是不是只能放在外面吧。
-		DPrintf("server[%d]is going to sleep.....111", rf.me)
+		//DPrintf("server[%d]is going to sleep.....111", rf.me)
 		rf.mu.Lock()
 		rf.receiveNew = false
 		rf.mu.Unlock()
 
-		DPrintf("server[%d]is going to sleep.....222", rf.me)
+		//DPrintf("server[%d]is going to sleep.....222", rf.me)
 		/*
 			如果总结哪些地方需要更新receiveNew呢？
 			1. 收到投票请求，然后自己投了赞成票了，此时需要重置定时器，如果发现请求投票的server的term比自己小的话，是不会投票的，

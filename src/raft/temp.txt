@@ -1,0 +1,125 @@
+test script, make leader2 disconnects ...... leader2 is: 2
+test script, make leader2 and leader 2+1 disconnects ...... leader2+1 is: 0
+2024/05/07 09:40:11 server[1]begin a new ticker, local state is:2, local term is:3, and receiveNew is:true
+2024/05/07 09:40:11 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[0]begin a new ticker, local state is:2, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[0]should begin a election
+2024/05/07 09:40:12 server[0]has vote for himself, term is:4
+2024/05/07 09:40:12 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:2172557356222566825
+2024/05/07 09:40:12 server[1]begin a new ticker, local state is:2, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[1]should begin a election
+2024/05/07 09:40:12 server[1]has vote for himself, term is:4
+2024/05/07 09:40:12 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:8427176430821595107
+2024/05/07 09:40:12 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, rand value is:4209492851607909796
+2024/05/07 09:40:12 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:2475091208625430219
+2024/05/07 09:40:12 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:12 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:2893524675326700614
+2024/05/07 09:40:12 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:13 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:13 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:3965690251099746404
+2024/05/07 09:40:13 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:13 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:13 server[0], vote for leader, got 1 tickets, got 2 failRpc, total 3 request
+2024/05/07 09:40:13 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:13 server[0]begin a new ticker, local state is:3, local term is:4, and receiveNew is:false
+2024/05/07 09:40:13 server[0]should begin a election
+2024/05/07 09:40:13 server[0]has vote for himself, term is:5
+
+begin to test no leader for test3A 4 is success?
+TestReElection3A 4 success 
+test script, make leader2+1 back to cluster, it should elect a leader ......
+begin to test one leader only for test3A 4 is success?
+2024/05/07 09:40:13 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:13 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:2458270693086204525
+2024/05/07 09:40:13 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:8153980785381068124
+2024/05/07 09:40:13 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:8558096959598525808
+2024/05/07 09:40:14 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:14 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:8153980785381068124
+2024/05/07 09:40:14 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:14 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:5219158840485407862
+2024/05/07 09:40:14 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:14 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:4512391896910950976
+2024/05/07 09:40:14 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:14 server[1], vote for leader, got 1 tickets, got 2 failRpc, total 3 request
+
+2024/05/07 09:40:14 server[1]begin a new ticker, local state is:3, local term is:4, and receiveNew is:false
+2024/05/07 09:40:14 server[1]should begin a election
+2024/05/07 09:40:14 server[1]has vote for himself, term is:5
+
+2024/05/07 09:40:14 server[0] begin to handler vote request, local term is:5, request server is:1, request term is:5,
+2024/05/07 09:40:14 server[0]not granted to server 1, because server has vote to 0
+2024/05/07 09:40:14 server[0] has finish request vote, request server is:1, args term is:5, result granted is:false
+
+
+=== server1：由于server0的回复一直没有回复。所以一直在等过半的节点回复。而又由于server2是下线的。所以只能等待server0的回复。因此会阻塞在wait处。
+但是wait是会释放锁的啊。
+=== server0：等待server1节点的投票回复，但是server1并没有处理投票请求，server1应该一直都没有
+2024/05/07 09:40:14 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:15 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:15 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:1916211781257977033
+2024/05/07 09:40:15 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:2651560653734387221
+2024/05/07 09:40:15 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:7919877062741390489
+2024/05/07 09:40:15 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:15 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:3965690251099746404
+2024/05/07 09:40:15 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:187325825695951026
+2024/05/07 09:40:15 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:15 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:2651560653734387221
+2024/05/07 09:40:15 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:16 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:7209356788988036250
+2024/05/07 09:40:16 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:5300779278992501070
+2024/05/07 09:40:16 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:16 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:6079345456161596141
+2024/05/07 09:40:16 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:16 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:4215050901150290479
+2024/05/07 09:40:16 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:3950298334663859073
+2024/05/07 09:40:16 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:16 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:4512391896910950976
+2024/05/07 09:40:16 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:3056450516189179535
+2024/05/07 09:40:16 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:917483930771717393
+2024/05/07 09:40:16 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:8761034879590236336
+2024/05/07 09:40:16 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:7209356788988036250
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:7919877062741390489
+2024/05/07 09:40:17 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:6518475175262000367
+2024/05/07 09:40:17 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:1573500331130221770
+2024/05/07 09:40:17 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:2475091208625430219
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:812070345981883895
+2024/05/07 09:40:17 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:17 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:4215050901150290479
+2024/05/07 09:40:17 server[1] send heart beat to 2, bug get fail,i am a leader? status:1, rand value is:3950298334663859073
+2024/05/07 09:40:17 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:17 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:4568766575098131894
+2024/05/07 09:40:17 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:1720288265924910884
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:608957205410742168
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:5219158840485407862
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:1839998709201096034
+2024/05/07 09:40:17 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:2458270693086204525
+2024/05/07 09:40:17 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:17 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:1720288265924910884
+2024/05/07 09:40:17 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:17 server[1] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:4209492851607909796
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:1839998709201096034
+2024/05/07 09:40:18 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:8950537996914413634
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:2744634152119372202
+2024/05/07 09:40:18 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:18 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:8119256165760744277
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:8023702052813365158
+2024/05/07 09:40:18 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:7680786222467566155
+2024/05/07 09:40:18 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:6518475175262000367
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:3056450516189179535
+2024/05/07 09:40:18 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:31551100688944395
+2024/05/07 09:40:18 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:18 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:5300779278992501070
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:2172557356222566825
+2024/05/07 09:40:18 server[1], vote for leader, got 1 tickets, got 1 failRpc, total 3 request
+2024/05/07 09:40:18 server[2] send heart beat to 1, bug get fail,i am a leader? status:1, rand value is:4568766575098131894
+2024/05/07 09:40:18 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:1916211781257977033
+2024/05/07 09:40:18 server[2]begin a new ticker, local state is:1, local term is:3, and receiveNew is:false
+2024/05/07 09:40:19 server[2] send heart beat to 0, bug get fail,i am a leader? status:1, rand value is:8851278866334516686
+--- FAIL: TestReElection3A (8.63s)
+    config.go:454: expected one leader, got none
