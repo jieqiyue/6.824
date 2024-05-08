@@ -43,7 +43,7 @@ type config struct {
 	finished    int32
 	net         *labrpc.Network
 	n           int
-	rafts       []*Raft
+	rafts       []*Raft  // 这个是什么？
 	applyErr    []string // from apply channel readers
 	connected   []bool   // whether each server is on the net
 	saved       []*Persister

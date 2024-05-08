@@ -80,6 +80,9 @@ type Raft struct {
 	state      ServerState
 	receiveNew bool
 
+	startElectionTime time.Time
+	electionInterval  int
+
 	// persistent state
 	currentTerm int        // 当前任期
 	voteFor     int        // 当前任期的选票投给了哪个server
@@ -92,6 +95,14 @@ type Raft struct {
 	// volatile state on leader
 	nextIndex  []int64 // 下一条要发送到各个client的日志的位置
 	matchIndex []int64 // 目前每个client已经匹配到的位置
+}
+
+// 不使用锁保护，需要调用者保证安全
+func (rf *Raft) SetElectionTime() {
+	rf.startElectionTime = time.Now()
+	rf.electionInterval = rand.Intn(400) + 800
+
+	return
 }
 
 // return currentTerm and whether this server
@@ -200,7 +211,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	DPrintf("server[%d] recive %d server vote request, args term is:%d, get lock success", rf.me, args.CandidateId, args.Term)
 	defer func() {
 		if reply.VoteGranted == true {
-			rf.receiveNew = true
+			//rf.receiveNew = true
+			rf.SetElectionTime()
 			rf.state = Follower
 		}
 		DPrintf("server[%d] has finish request vote, request server is:%d, args term is:%d, result granted is:%v", rf.me, args.CandidateId, args.Term, reply.VoteGranted)
@@ -281,7 +293,8 @@ func (rf *Raft) RequestHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 		return
 	}
 
-	rf.receiveNew = true
+	// rf.receiveNew = true
+	rf.SetElectionTime()
 	DPrintf("server[%d]got heart beat, reset timeout, local term is:%d, local status is:%d, args server id is:%d, args term is:%d", rf.me, rf.currentTerm, rf.state, args.CandidateId, args.Term)
 }
 
@@ -298,7 +311,8 @@ func (rf *Raft) AddCurrentTerm(term int) {
 	rf.state = Follower
 	// 虽然这个voteFor没有明确在论文中指出需要设置为什么值，这里我考虑是需要设置为-1的
 	rf.voteFor = -1
-	rf.receiveNew = true
+	//rf.receiveNew = true
+	rf.SetElectionTime()
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -436,10 +450,11 @@ func (rf *Raft) ticker() {
 		rf.mu.Lock()
 		shouldElection = false
 
-		DPrintf("server[%d]begin a new ticker, local state is:%v, local term is:%d, and receiveNew is:%v", rf.me, rf.state, rf.currentTerm, rf.receiveNew)
+		DPrintf("server[%d]begin a new ticker, local state is:%v, local term is:%d, and time is bigger than interval?:%v",
+			rf.me, rf.state, rf.currentTerm, time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond)
 		// todo  此处是否是这两个状态呢？如果某一个节点是候选者，并且在某一次选举中，并没有成为follower的话，就需要继续选举
 		// todo 所以这里也依赖这个receiveNew，这个receiveNew需要在接收到新heartBeat或者是appendEntries的时候更新
-		if !rf.receiveNew && (rf.state == Follower || rf.state == Candidate) {
+		if time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond && (rf.state == Follower || rf.state == Candidate) {
 			DPrintf("server[%d]should begin a election", rf.me)
 			shouldElection = true
 			rf.currentTerm++
@@ -466,80 +481,82 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 
 		// 在发送RPC之前释放锁，防止死锁
-		if shouldElection {
-			// 由于RPC已经含有了超时的功能，所以此处直接使用waitGroup，不用担心某一个节点不可达，导致reply一直收不到的情况
-			//wg := sync.WaitGroup{}
-			cond := sync.NewCond(&rf.mu)
-			finishRequest := 1
-			voteCount := 1
-			rpcFailCount := 0
+		go func() {
+			if shouldElection {
+				// 由于RPC已经含有了超时的功能，所以此处直接使用waitGroup，不用担心某一个节点不可达，导致reply一直收不到的情况
+				//wg := sync.WaitGroup{}
+				cond := sync.NewCond(&rf.mu)
+				finishRequest := 1
+				voteCount := 1
+				rpcFailCount := 0
 
-			for i, _ := range rf.peers {
-				if i == rf.me {
-					continue
-				}
-
-				//wg.Add(1)
-				go func(i int, args RequestVoteArgs) {
-					// 此处的reply必须每个goroutine都使用不同的
-					reply := RequestVoteReply{}
-					// 注意这里的i要使用外部传入的参数，不能直接使用闭包
-					ok := rf.sendRequestVote(i, &args, &reply)
-
-					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
-					rf.mu.Lock()
-					defer rf.mu.Unlock()
-					finishRequest++
-					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
-					if ok {
-						if reply.VoteGranted {
-							voteCount++
-						}
-
-						if reply.Term > rf.currentTerm {
-							DPrintf("server[%d]request for leader, but server:%d, "+
-								"response term:%d is bigger than local term:%d, so change local term to new", rf.me, i, reply.Term, rf.currentTerm)
-							rf.AddCurrentTerm(reply.Term)
-						}
-					} else {
-						rpcFailCount++
+				for i, _ := range rf.peers {
+					if i == rf.me {
+						continue
 					}
-					cond.Broadcast()
-				}(i, args)
-			}
 
-			//wg.Wait()
-			rf.mu.Lock()
-			// 退出循环的条件
-			// 1. 过半节点同意   2. 所有请求都已经回复了
-			// 考虑一个3server组成的一个集群的情况：分别是 0，1，2三个机器。0机器是离线的，分区了。然后集群中只有1，2两台机器能互相通信。此时1开始选举，选举的term为5，2也开始选举，term也为5，
-			// 原来的判断条件中，需要所有的节点都回复才能跳出循环。
-			for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) && voteCount+(len(rf.peers)-finishRequest) > (len(rf.peers)/2) {
-				cond.Wait()
-				DPrintf("server[%d] wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", rf.me, voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
-			}
-			//DPrintf("server[%d]is going to sleep.....555", rf.me)
-			DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
-			// 接下来要根据投票的结果来修改本地的状态了
-			if rf.currentTerm == args.Term && rf.state == Candidate {
-				if voteCount > len(rf.peers)/2 {
-					rf.state = Leader
-					DPrintf("server[%d], become a leader, got %d tickets", rf.me, voteCount)
+					//wg.Add(1)
+					go func(i int, args RequestVoteArgs) {
+						// 此处的reply必须每个goroutine都使用不同的
+						reply := RequestVoteReply{}
+						// 注意这里的i要使用外部传入的参数，不能直接使用闭包
+						ok := rf.sendRequestVote(i, &args, &reply)
+
+						DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
+						rf.mu.Lock()
+						defer rf.mu.Unlock()
+						finishRequest++
+						DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
+						if ok {
+							if reply.VoteGranted {
+								voteCount++
+							}
+
+							if reply.Term > rf.currentTerm {
+								DPrintf("server[%d]request for leader, but server:%d, "+
+									"response term:%d is bigger than local term:%d, so change local term to new", rf.me, i, reply.Term, rf.currentTerm)
+								rf.AddCurrentTerm(reply.Term)
+							}
+						} else {
+							rpcFailCount++
+						}
+						cond.Broadcast()
+					}(i, args)
 				}
+
+				//wg.Wait()
+				rf.mu.Lock()
+				// 退出循环的条件
+				// 1. 过半节点同意   2. 所有请求都已经回复了
+				// 考虑一个3server组成的一个集群的情况：分别是 0，1，2三个机器。0机器是离线的，分区了。然后集群中只有1，2两台机器能互相通信。此时1开始选举，选举的term为5，2也开始选举，term也为5，
+				// 原来的判断条件中，需要所有的节点都回复才能跳出循环。
+				for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) && voteCount+(len(rf.peers)-finishRequest) > (len(rf.peers)/2) {
+					cond.Wait()
+					DPrintf("server[%d] wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", rf.me, voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
+				}
+				//DPrintf("server[%d]is going to sleep.....555", rf.me)
+				DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
+				// 接下来要根据投票的结果来修改本地的状态了
+				if rf.currentTerm == args.Term && rf.state == Candidate {
+					if voteCount > len(rf.peers)/2 {
+						rf.state = Leader
+						DPrintf("server[%d], become a leader, got %d tickets", rf.me, voteCount)
+					}
+				}
+				//DPrintf("server[%d]is going to sleep.....444", rf.me)
+				rf.mu.Unlock()
+				//DPrintf("server[%d]is going to sleep.....333", rf.me)
 			}
-			//DPrintf("server[%d]is going to sleep.....444", rf.me)
-			rf.mu.Unlock()
-			//DPrintf("server[%d]is going to sleep.....333", rf.me)
-		}
+		}()
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		// 需要在这里重置一下是否收到新消息,防止receiveNew一直为true，然后不执行新的选举
 		// 这个是不是只能放在外面吧。
 		//DPrintf("server[%d]is going to sleep.....111", rf.me)
-		rf.mu.Lock()
-		rf.receiveNew = false
-		rf.mu.Unlock()
+		//rf.mu.Lock()
+		//rf.receiveNew = false
+		//rf.mu.Unlock()
 
 		//DPrintf("server[%d]is going to sleep.....222", rf.me)
 		/*
@@ -577,6 +594,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.currentTerm = 0
 	// todo 此处不能设置为true，不然第一个测试会过不了
 	//rf.receiveNew = true
+	//rf.SetElectionTime()
+	rf.startElectionTime = time.Now()
+	rf.electionInterval = 0
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
