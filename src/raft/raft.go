@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"context"
 	//	"bytes"
 	"math/rand"
 	"sync"
@@ -328,8 +329,9 @@ func (rf *Raft) AddCurrentTerm(term int) {
 // capitalized all field names in structs passed over RPC, and
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+func (rf *Raft) sendRequestVote(ch chan bool, server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	ch <- ok
 	return ok
 }
 
@@ -483,28 +485,42 @@ func (rf *Raft) ticker() {
 				go func(i int, args RequestVoteArgs) {
 					// 此处的reply必须每个goroutine都使用不同的
 					reply := RequestVoteReply{}
+
+					ch := make(chan bool, 1)
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					defer cancel()
+
 					// 注意这里的i要使用外部传入的参数，不能直接使用闭包
-					ok := rf.sendRequestVote(i, &args, &reply)
+					go rf.sendRequestVote(ch, i, &args, &reply)
+					select {
+					case ok := <-ch:
+						DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
+						rf.mu.Lock()
+						defer rf.mu.Unlock()
+						finishRequest++
+						DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
+						if ok {
+							if reply.VoteGranted {
+								voteCount++
+							}
 
-					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
-					rf.mu.Lock()
-					defer rf.mu.Unlock()
-					finishRequest++
-					DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
-					if ok {
-						if reply.VoteGranted {
-							voteCount++
+							if reply.Term > rf.currentTerm {
+								DPrintf("server[%d]request for leader, but server:%d, "+
+									"response term:%d is bigger than local term:%d, so change local term to new", rf.me, i, reply.Term, rf.currentTerm)
+								rf.AddCurrentTerm(reply.Term)
+							}
+						} else {
+							rpcFailCount++
 						}
+						cond.Broadcast()
+					case <-ctx.Done():
+						rf.mu.Lock()
+						defer rf.mu.Unlock()
 
-						if reply.Term > rf.currentTerm {
-							DPrintf("server[%d]request for leader, but server:%d, "+
-								"response term:%d is bigger than local term:%d, so change local term to new", rf.me, i, reply.Term, rf.currentTerm)
-							rf.AddCurrentTerm(reply.Term)
-						}
-					} else {
+						finishRequest++
 						rpcFailCount++
+						cond.Broadcast()
 					}
-					cond.Broadcast()
 				}(i, args)
 			}
 
