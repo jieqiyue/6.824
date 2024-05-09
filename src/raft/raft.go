@@ -223,8 +223,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	// 接下来判断日志是否至少跟自己一样新
-	localLastIndex := 0
-	localLastTerm := 0
+	localLastIndex := -1
+	localLastTerm := -1
 
 	if len(rf.log) != 0 {
 		localLastIndex = rf.log[len(rf.log)-1].Index
@@ -279,7 +279,7 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 	reply.Term = rf.currentTerm
 
 	// 有两种情况会reply为false，一种是本地term大于args里面的term，一种是因为这个preLog对不上
-	if rf.currentTerm > args.Term {
+	if rf.currentTerm > args.Term || args.PrevLogIndex > len(rf.log)-1 || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.Success = false
 		reply.Term = rf.currentTerm
 		return
@@ -290,11 +290,15 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 		rf.AddCurrentTerm(args.Term)
 	}
 
-	// 判断这个位置是否有preLog的日志了，如果没有的话，返回false
-	if len(rf.log)-1 < args.PrevLogIndex {
-
+	// 到这个位置的时候，当前server的term一定是等于args的term的，此处需要判断一下，如果当前server是一个候选者，则将他的状态改为follower
+	if rf.state == Candidate {
+		DPrintf("server[%d]got a append entries rpc, but current status is candidate,so change state to follower", rf.me)
+		rf.state = Follower
+		rf.voteFor = -1
 	}
 
+	// 判断这个位置是否有preLog的日志了，如果没有的话，返回false
+	rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
 	// todo 如果当前server的状态是候选者状态，这个地方会不会影响他的选举？
 	rf.SetElectionTime()
 }
@@ -638,9 +642,9 @@ func (rf *Raft) ticker() {
 
 			// 如果当前是空日志的话
 			if len(rf.log) == 0 {
-				args.LastLogIndex = 0
+				args.LastLogIndex = -1
 				// todo 此处应该要设置为0，还是用rf里面的currentTerm
-				args.LastLogTerm = 0
+				args.LastLogTerm = -1
 			} else {
 				tempLog := rf.log[len(rf.log)-1]
 				args.LastLogTerm = tempLog.Term
