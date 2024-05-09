@@ -7,7 +7,7 @@ package raft
 //
 // rf = Make(...)
 //   create a new Raft server.
-// rf.Start(command interface{}) (index, Term, isleader)
+// rf.Start(command interface{}) (Index, Term, isleader)
 //   start agreement on a new log entry
 // rf.GetState() (Term, isLeader)
 //   ask a Raft for its current Term, and whether it thinks it is leader
@@ -51,9 +51,9 @@ type ApplyMsg struct {
 
 // LogEntry 用来表示每条日志
 type LogEntry struct {
-	term  int         //  这个日志发出的leader的term是什么
-	index int         // 这个日志在整体日志中的位置
-	data  interface{} // 存储的LogEntry的数据
+	Term  int         //  这个日志发出的leader的term是什么
+	Index int         // 这个日志在整体日志中的位置
+	Data  interface{} // 存储的LogEntry的数据
 }
 
 type ServerState int
@@ -70,12 +70,14 @@ type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
-	me        int                 // this peer's index into peers[]
+	me        int                 // this peer's Index into peers[]
 	dead      int32               // set by Kill()
 
-	// Your data here (3A, 3B, 3C).
+	// Your Data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+
+	applyCh chan ApplyMsg
 
 	state      ServerState
 	receiveNew bool
@@ -89,12 +91,12 @@ type Raft struct {
 	log         []LogEntry // 当前这个server中的所有日志
 
 	// volatile state
-	commitIndex int64 // 当前可以应用到状态机的日志为止
-	lastApplied int64 // 当前server已经应用到状态机的位置
+	commitIndex int // 当前可以应用到状态机的日志为止
+	lastApplied int // 当前server已经应用到状态机的位置
 
 	// volatile state on leader
-	nextIndex  []int64 // 下一条要发送到各个client的日志的位置
-	matchIndex []int64 // 目前每个client已经匹配到的位置
+	nextIndex  []int // 下一条要发送到各个client的日志的位置，指示的是log数组的下标
+	matchIndex []int // 目前每个client已经匹配到的位置
 }
 
 // 不使用锁保护，需要调用者保证安全
@@ -149,7 +151,7 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (3C).
 	// Example:
-	// r := bytes.NewBuffer(data)
+	// r := bytes.NewBuffer(Data)
 	// d := labgob.NewDecoder(r)
 	// var xxx
 	// var yyy
@@ -163,9 +165,9 @@ func (rf *Raft) readPersist(data []byte) {
 }
 
 // the service says it has created a snapshot that has
-// all info up to and including index. this means the
+// all info up to and including Index. this means the
 // service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
+// that Index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (3D).
 
@@ -177,26 +179,26 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 因为如果仅仅靠着大term，是不能够获取到选票的。获取选票的关键还是要看日志哪个更新。因为有可能一个网络分区的节点，一直在投票，导致自己的term
 	// 非常大，然后忽然不分区了，重新加入集群之后，就会出现这种情况。
 	// Your code here (3A, 3B).
-	DPrintf("server[%d] recive %d server vote request, args term is:%d", rf.me, args.CandidateId, args.Term)
+	DPrintf("server[%d] recive %d server vote request, args Term is:%d", rf.me, args.CandidateId, args.Term)
 	rf.mu.Lock()
-	DPrintf("server[%d] recive %d server vote request, args term is:%d, get lock success", rf.me, args.CandidateId, args.Term)
+	DPrintf("server[%d] recive %d server vote request, args Term is:%d, get lock success", rf.me, args.CandidateId, args.Term)
 	defer func() {
 		if reply.VoteGranted == true {
 			//rf.receiveNew = true
 			rf.SetElectionTime()
 			rf.state = Follower
 		}
-		DPrintf("server[%d] has finish request vote, request server is:%d, args term is:%d, result granted is:%v", rf.me, args.CandidateId, args.Term, reply.VoteGranted)
+		DPrintf("server[%d] has finish request vote, request server is:%d, args Term is:%d, result granted is:%v", rf.me, args.CandidateId, args.Term, reply.VoteGranted)
 		rf.mu.Unlock()
 	}()
 
-	DPrintf("server[%d] begin to handler vote request, local term is:%d, request server is:%d, request term is:%d,", rf.me, rf.currentTerm, args.CandidateId, args.Term)
+	DPrintf("server[%d] begin to handler vote request, local Term is:%d, request server is:%d, request Term is:%d,", rf.me, rf.currentTerm, args.CandidateId, args.Term)
 	reply.Term = rf.currentTerm
 	// 先判断两种特殊情况
 	// 1. 如果请求的term小于当前server的term，则返回false
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
-		DPrintf("server[%d]not granted to server %d, because args term less than me", rf.me, args.CandidateId)
+		DPrintf("server[%d]not granted to server %d, because args Term less than me", rf.me, args.CandidateId)
 		return
 	}
 
@@ -225,8 +227,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	localLastTerm := 0
 
 	if len(rf.log) != 0 {
-		localLastIndex = rf.log[len(rf.log)-1].index
-		localLastTerm = rf.log[len(rf.log)-1].term
+		localLastIndex = rf.log[len(rf.log)-1].Index
+		localLastTerm = rf.log[len(rf.log)-1].Term
 	}
 
 	if args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex {
@@ -235,7 +237,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.voteFor = args.CandidateId
 		reply.VoteGranted = true
 	} else {
-		DPrintf("server[%d]not granted to server %d, because local index is new than args", rf.me, args.CandidateId)
+		DPrintf("server[%d]not granted to server %d, because local Index is new than args", rf.me, args.CandidateId)
 		reply.VoteGranted = false
 	}
 }
@@ -248,7 +250,7 @@ func (rf *Raft) RequestHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 	reply.Term = rf.currentTerm
 
 	if args.Term < rf.currentTerm {
-		DPrintf("server[%d] got a heart beat, but args term less than local term, request term is:%d, request server id is:%d", rf.me, args.Term, args.CandidateId)
+		DPrintf("server[%d] got a heart beat, but args Term less than local Term, request Term is:%d, request server id is:%d", rf.me, args.Term, args.CandidateId)
 		return
 	}
 
@@ -259,14 +261,42 @@ func (rf *Raft) RequestHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 
 	// 当请求的term大于本地的term的时候，就证明自己收到了更高的term的心跳，此时应该将自身转为follower，并且修改自身的term。
 	if args.Term > rf.currentTerm {
-		DPrintf("server[%d] got a heart beat, and args term is bigger than local term, args term:%d, args server id:%d, local term:%d", rf.me, args.Term, args.CandidateId, rf.currentTerm)
+		DPrintf("server[%d] got a heart beat, and args Term is bigger than local Term, args Term:%d, args server id:%d, local Term:%d", rf.me, args.Term, args.CandidateId, rf.currentTerm)
 		rf.AddCurrentTerm(args.Term)
 		return
 	}
 
 	// rf.receiveNew = true
 	rf.SetElectionTime()
-	DPrintf("server[%d]got heart beat, reset timeout, local term is:%d, local status is:%d, args server id is:%d, args term is:%d", rf.me, rf.currentTerm, rf.state, args.CandidateId, args.Term)
+	DPrintf("server[%d]got heart beat, reset timeout, local Term is:%d, local status is:%d, args server id is:%d, args Term is:%d", rf.me, rf.currentTerm, rf.state, args.CandidateId, args.Term)
+}
+
+func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
+	// Your code here (3A, 3B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	reply.Term = rf.currentTerm
+
+	// 有两种情况会reply为false，一种是本地term大于args里面的term，一种是因为这个preLog对不上
+	if rf.currentTerm > args.Term {
+		reply.Success = false
+		reply.Term = rf.currentTerm
+		return
+	}
+
+	// 如果请求的term大于等于本地的term，则需要将自己转为follower，并且更新自己的term
+	if args.Term > rf.currentTerm {
+		rf.AddCurrentTerm(args.Term)
+	}
+
+	// 判断这个位置是否有preLog的日志了，如果没有的话，返回false
+	if len(rf.log)-1 < args.PrevLogIndex {
+
+	}
+
+	// todo 如果当前server的状态是候选者状态，这个地方会不会影响他的选举？
+	rf.SetElectionTime()
 }
 
 // 此方法不使用锁保护，防止锁重入出现panic，需要调用方保证线程安全性
@@ -287,7 +317,7 @@ func (rf *Raft) AddCurrentTerm(term int) {
 }
 
 // example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
+// server is the Index of the target server in rf.peers[].
 // expects RPC arguments in args.
 // fills in *reply with RPC reply, so caller should
 // pass &reply.
@@ -323,6 +353,11 @@ func (rf *Raft) sendHeartBeat(server int, args *HeartBeatArgs, reply *HeartBeatR
 	return ok
 }
 
+func (rf *Raft) sendLog(server int, args *SendLogArgs, reply *SendLogReply) bool {
+	ok := rf.peers[server].Call("Raft.RequestSendLog", args, reply)
+	return ok
+}
+
 // Start the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -331,7 +366,7 @@ func (rf *Raft) sendHeartBeat(server int, args *HeartBeatArgs, reply *HeartBeatR
 // may fail or lose an election. even if the Raft instance has been killed,
 // this function should return gracefully.
 //
-// the first return value is the index that the command will appear at
+// the first return value is the Index that the command will appear at
 // if it's ever committed. the second return value is the current
 // Term. the third return value is true if this server believes it is
 // the leader.
@@ -354,23 +389,23 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	// 将command转化为一个LogEntry结构体
 	log := LogEntry{
-		data: command,
-		term: rf.currentTerm,
+		Data: command,
+		Term: rf.currentTerm,
 	}
 
 	// index还是先查看本地的Log数组中的最后一个LogEntry的index是什么，logIndex从1开始
 	if len(rf.log) == 0 {
-		log.index = 1
+		log.Index = 0
 	} else {
 		// 如果本地的Log中已经有日志了，则新日志的index需要比原有的最后一条日志的index加一
 		lastEntry := rf.log[len(rf.log)-1]
-		log.index = lastEntry.index + 1
+		log.Index = lastEntry.Index + 1
 	}
 
 	// 此时LogEntry已经构建好了，将它添加到Raft中的log数组中
 	rf.log = append(rf.log, log)
 
-	return log.index, log.term, true
+	return log.Index, log.Term, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -423,7 +458,7 @@ func (rf *Raft) heartBeat() {
 					ok := rf.sendHeartBeat(i, &args, &reply)
 					if !ok {
 						// 针对已经不是leader的server还是会发心跳这个问题，可以把这个请求的args里面的term给打印出来，这样就能知道了
-						DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v, args term is:%d", serverId, i, serverState, args.Term)
+						DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v, args Term is:%d", serverId, i, serverState, args.Term)
 					}
 					// todo 此处先不根据返回值来修改当前server的term值，有可能出现这样的情况：一个leader，独自发生了分区，然后他一直给
 					// todo 其它的server发送心跳。此时其它server已经进行了新的选举了，所以其它server的term可能比当前server的大，但是
@@ -438,48 +473,139 @@ func (rf *Raft) heartBeat() {
 	}
 }
 
-func (rf *Raft) sendLog() {
+func (rf *Raft) sendLogTicket() {
 	// 周期性的发送日志
-	//shouldSendLog := false
-	//sendLogArgs := make()
+	shouldSendLog := false
+	allSendLogArgs := make([]SendLogArgs, len(rf.peers))
 
-	//for rf.killed() == false {
-	//	rf.mu.Lock()
-	//	shouldSendLog = false
-	//	if rf.state == Leader {
-	//		shouldSendLog = true
-	//
-	//		heartBeatArgs := HeartBeatArgs{}
-	//		heartBeatArgs.CandidateId = rf.me
-	//		heartBeatArgs.Term = rf.currentTerm
-	//	}
-	//
-	//	rf.mu.Unlock()
+	for rf.killed() == false {
+		rf.mu.Lock()
+		shouldSendLog = false
+		// 如果当前是leader，并且自己含有日志的话，则将这次分发日志的参数都构建好
+		// todo 这里直接使用rf.log来判断leader是否有日志要发送，后续引入了snapshot，这个地方是否需要更改？
+		if rf.state == Leader && len(rf.log) > 0 {
+			shouldSendLog = true
 
-	//if shouldSendLog {
-	//	for i, _ := range rf.peers {
-	//		if i == rf.me {
-	//			continue
-	//		}
-	//
-	//		go func(i int, args HeartBeatArgs) {
-	//			reply := HeartBeatReply{}
-	//			ok := rf.sendHeartBeat(i, &args, &reply)
-	//			if !ok {
-	//				// 针对已经不是leader的server还是会发心跳这个问题，可以把这个请求的args里面的term给打印出来，这样就能知道了
-	//				DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v, args term is:%d", serverId, i, serverState, args.Term)
-	//			}
-	//			// todo 此处先不根据返回值来修改当前server的term值，有可能出现这样的情况：一个leader，独自发生了分区，然后他一直给
-	//			// todo 其它的server发送心跳。此时其它server已经进行了新的选举了，所以其它server的term可能比当前server的大，但是
-	//			// todo 此处并不根据这个心跳返回的term来更新本地server，而是希望通过新领导者的appendEntries或者是心跳请求来更新本地
-	//			// todo 的term。
-	//		}(i, heartBeatArgs)
-	//	}
-	//}
+			for i, _ := range rf.peers {
+				sendLogArgs := SendLogArgs{}
+				// 此处不能使用append，要使用下标的方式每次都覆盖上次这个位置的值
+				allSendLogArgs[i] = sendLogArgs
 
-	//	ms := 150
-	//	time.Sleep(time.Duration(ms) * time.Millisecond)
-	//}
+				// 如果这个follower的nextIndex是leader的最后一条日志的index + 1的位置，那么就认为没有新的日志要发送
+				// 所以这个nextIndex一开始需要初始化为len(rf.log) - 1的位置，表示将要发送的Log的下标。如果一开始的时候，leader一条日志都
+				// 没有，那么会初始化为0，否则初始化为len(rf.log) - 1.当初始化为0的时候，这个条件也会成立，所以也不会再发送RPC了。而当leader
+				// 后续添加了一条log之后，len(rf.log) 就变成1了，此时的nextIndex还是0，那么不成立也就会继续往下去发送日志了
+				if i == rf.me || rf.nextIndex[i] >= len(rf.log) {
+					sendLogArgs.ShouldSend = false
+					continue
+				}
+
+				// log
+				DPrintf("server[%d] prepare send log to %d, the nextIndex is:%d, len of log is:%d", rf.me, i, rf.nextIndex[i], len(rf.log))
+				if rf.nextIndex[i] < 0 {
+					DPrintf("error,server[%d] found %d nextIndex less than 0", rf.me, i)
+					rf.nextIndex[i] = 0
+				}
+
+				// todo 此时是否需要判断nextIndex是否是大于0的，有可能某一个follower的nextIndex一直减少，一直到0以下了
+				sendLogArgs.ShouldSend = true
+				sendLogArgs.LeaderId = rf.me
+				sendLogArgs.Term = rf.currentTerm
+
+				// 到这个位置的话，leader的log一定是含有nextIndex[i]这个下标位置的log的，并且nextIndex[i]不可能会小于0，至少都是0，
+				// 而当如果nextIndex[i]是0的话，那么是没有preLog的，而当nextIndex[i]大于0的话，则一定有前一条日志。
+				if rf.nextIndex[i] == 0 {
+					sendLogArgs.PrevLogTerm = -1
+					sendLogArgs.PrevLogIndex = -1
+				} else {
+					preLog := rf.log[rf.nextIndex[i]-1]
+					sendLogArgs.PrevLogTerm = preLog.Term
+					sendLogArgs.PrevLogTerm = preLog.Term
+				}
+
+				sendLogArgs.Entries = rf.log[rf.nextIndex[i]:]
+				sendLogArgs.LeaderCommit = rf.commitIndex
+			}
+		}
+
+		rf.mu.Unlock()
+
+		if shouldSendLog {
+			for i, _ := range rf.peers {
+				if i == rf.me || !allSendLogArgs[i].ShouldSend {
+					continue
+				}
+
+				go func(i int) {
+					reply := SendLogReply{}
+					//  for update commitIndex,这里不能用args的term，而是应该用当前leader的term，因为日志的term有可能是之前的term的，
+					// 而这里要拿到的是当前发出这个请求的leader的term。
+					leaderTerm := allSendLogArgs[i].Term
+					lastSendLogIndex := allSendLogArgs[i].Entries[len(allSendLogArgs[i].Entries)-1].Index
+					lastSendLogTerm := allSendLogArgs[i].Entries[len(allSendLogArgs[i].Entries)-1].Term
+					// for log
+					preLogTerm := allSendLogArgs[i].PrevLogTerm
+					preLogIndex := allSendLogArgs[i].PrevLogIndex
+
+					ok := rf.sendLog(i, &allSendLogArgs[i], &reply)
+					if !ok {
+						DPrintf("server[%d] send log to %d, bug get fail, args Term is:%d, args Index is:%d", rf.me, i, preLogTerm, preLogIndex)
+						return
+					}
+
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
+					if reply.Term > rf.currentTerm {
+						rf.AddCurrentTerm(reply.Term)
+						return
+					}
+
+					// 在更新之前，还需要进行两个判断，当前是否是leader，并且当前的term是否还是之前发出这个请求的时候的term，因为可能出现如下情形：
+					// 1. 如果当前已经不是leader了，那么此时再去更新commitIndex，并且把已经提交的日志发送到上层的话，会造成误解，因为这个位置的日志可能
+					// 已经被新的term的leader重写了。此时可能会提交一个错误的index的日志。
+					// 2. 如果当前是leader，但是当前的term和发出请求的term不相同。那么可能中间没有当leader的那个term可能已经把这个位置的日志重写了。
+					// 那么此时如果更新nextIndex的话，就更新不是自己term的了，会影响最新的term的nextIndex了。
+					if rf.state == Leader && rf.currentTerm == leaderTerm {
+						// 更新这个follower的nextIndex，和leader的commitIndex
+						if reply.Success {
+							// 更新nextIndex,matchIndex也更新为这次请求设置的值，这个地方还需要判断是否之前的大，如果大的话，才去更新，
+							// 因为有可能这次请求执行的很慢，导致leader下一次重发了这个请求，并且重发了后面的请求，然后后面的请求都已经执行成功了。
+							// 所以matchIndex已经被更新到更大的值了，此时如果不判断直接设置的话，会导致matchIndex回退。
+							if lastSendLogIndex > rf.matchIndex[i] {
+								rf.matchIndex[i] = lastSendLogIndex
+							}
+							if lastSendLogIndex+1 > rf.nextIndex[i] {
+								rf.nextIndex[i] = lastSendLogIndex + 1
+							}
+
+							// 更新commitIndex，注意这里不能提交之前term的日志，只能提交本term的日志
+							matchCount := 0
+							for _, matchIndex := range rf.matchIndex {
+								if matchIndex >= rf.matchIndex[i] {
+									matchCount++
+								}
+							}
+
+							// 注意这里要判断这个日志的term是否是本leader的term，如果不是则不提交
+							if rf.matchIndex[i] > rf.commitIndex && matchCount > len(rf.peers)/2 && rf.currentTerm == lastSendLogTerm {
+								rf.commitIndex = rf.matchIndex[i]
+
+							}
+						} else {
+							// 如果返回失败，则需要递减nextIndex的值,往前退一个值，正常来说，对于index为0的日志，是不可能会添加失败的。
+							// follower接收到下标为0的日志的时候，应该是要无条件接收的。
+							// 如果这次的log并没有分发成功，则对于这个请求来说，不需要去更新leader的commitIndex。
+							rf.nextIndex[i]--
+							// todo 这里暂时不更新matchIndex，而去依赖当reply为success的时候去更新
+						}
+					}
+				}(i)
+			}
+		}
+
+		ms := 150
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
 }
 
 func (rf *Raft) ticker() {
@@ -493,7 +619,7 @@ func (rf *Raft) ticker() {
 		rf.mu.Lock()
 		shouldElection = false
 
-		DPrintf("server[%d]begin a new ticker, local state is:%v, local term is:%d, and time is bigger than interval?:%v",
+		DPrintf("server[%d]begin a new ticker, local state is:%v, local Term is:%d, and time is bigger than interval?:%v",
 			rf.me, rf.state, rf.currentTerm, time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond)
 		// todo  此处是否是这两个状态呢？如果某一个节点是候选者，并且在某一次选举中，并没有成为follower的话，就需要继续选举
 		// todo 所以这里也依赖这个receiveNew，这个receiveNew需要在接收到新heartBeat或者是appendEntries的时候更新
@@ -503,7 +629,7 @@ func (rf *Raft) ticker() {
 			rf.currentTerm++
 			rf.state = Candidate
 			rf.voteFor = rf.me
-			DPrintf("server[%d]has vote for himself, term is:%d", rf.me, rf.currentTerm)
+			DPrintf("server[%d]has vote for himself, Term is:%d", rf.me, rf.currentTerm)
 
 			args = RequestVoteArgs{
 				Term:        rf.currentTerm,
@@ -517,8 +643,8 @@ func (rf *Raft) ticker() {
 				args.LastLogTerm = 0
 			} else {
 				tempLog := rf.log[len(rf.log)-1]
-				args.LastLogTerm = tempLog.term
-				args.LastLogIndex = tempLog.index
+				args.LastLogTerm = tempLog.Term
+				args.LastLogIndex = tempLog.Index
 			}
 		}
 		rf.mu.Unlock()
@@ -545,11 +671,11 @@ func (rf *Raft) ticker() {
 						// 注意这里的i要使用外部传入的参数，不能直接使用闭包
 						ok := rf.sendRequestVote(i, &args, &reply)
 
-						DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
+						DPrintf("server[%d] got server %d vote respone, args Term is:%d,reply grante:%v, is ok? %v, not get lock", rf.me, i, args.Term, reply.VoteGranted, ok)
 						rf.mu.Lock()
 						defer rf.mu.Unlock()
 						finishRequest++
-						DPrintf("server[%d] got server %d vote respone, args term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
+						DPrintf("server[%d] got server %d vote respone, args Term is:%d,reply grante:%v, is ok? %v, get lock success", rf.me, i, args.Term, reply.VoteGranted, ok)
 						if ok {
 							if reply.VoteGranted {
 								voteCount++
@@ -557,7 +683,7 @@ func (rf *Raft) ticker() {
 
 							if reply.Term > rf.currentTerm {
 								DPrintf("server[%d]request for leader, but server:%d, "+
-									"response term:%d is bigger than local term:%d, so change local term to new", rf.me, i, reply.Term, rf.currentTerm)
+									"response Term:%d is bigger than local Term:%d, so change local Term to new", rf.me, i, reply.Term, rf.currentTerm)
 								rf.AddCurrentTerm(reply.Term)
 							}
 						} else {
@@ -578,7 +704,7 @@ func (rf *Raft) ticker() {
 					DPrintf("server[%d] wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", rf.me, voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
 				}
 				//DPrintf("server[%d]is going to sleep.....555", rf.me)
-				DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
+				DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args Term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
 				// 接下来要根据投票的结果来修改本地的状态了
 				if rf.currentTerm == args.Term && rf.state == Candidate {
 					if voteCount > len(rf.peers)/2 {
@@ -629,6 +755,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.applyCh = applyCh
 
 	// Your initialization code here (3A, 3B, 3C).
 
@@ -640,11 +767,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//rf.SetElectionTime()
 	rf.startElectionTime = time.Now()
 	rf.electionInterval = 0
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+	rf.voteFor = -1
 
 	// 初始化日志分发相关的切片
 	rf.log = make([]LogEntry, 0)
-	rf.nextIndex = make([]int64, 0)
-	rf.matchIndex = make([]int64, 0)
+	rf.nextIndex = make([]int, 0)
+	rf.matchIndex = make([]int, 0)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
