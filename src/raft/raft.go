@@ -51,9 +51,9 @@ type ApplyMsg struct {
 
 // LogEntry 用来表示每条日志
 type LogEntry struct {
-	term  int    //  这个日志发出的leader的term是什么
-	index int64  // 这个日志在整体日志中的位置
-	data  []byte // 存储的LogEntry的数据
+	term  int         //  这个日志发出的leader的term是什么
+	index int         // 这个日志在整体日志中的位置
+	data  interface{} // 存储的LogEntry的数据
 }
 
 type ServerState int
@@ -171,35 +171,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 }
 
-type HeartBeatArgs struct {
-	// Your data here (3A, 3B).
-	Term        int
-	CandidateId int
-}
-
-type HeartBeatReply struct {
-	// Your data here (3A, 3B).
-	Term int
-}
-
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-type RequestVoteArgs struct {
-	// Your data here (3A, 3B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int64
-	LastLogTerm  int
-}
-
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-type RequestVoteReply struct {
-	// Your data here (3A).
-	Term        int
-	VoteGranted bool
-}
-
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 该函数是否需要先计算一下请求的args里面的日志和本地日志，哪个更新？先得出这个结论来，
@@ -250,7 +221,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	// 接下来判断日志是否至少跟自己一样新
-	localLastIndex := int64(0)
+	localLastIndex := 0
 	localLastTerm := 0
 
 	if len(rf.log) != 0 {
@@ -352,7 +323,7 @@ func (rf *Raft) sendHeartBeat(server int, args *HeartBeatArgs, reply *HeartBeatR
 	return ok
 }
 
-// the service using Raft (e.g. a k/v server) wants to start
+// Start the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
 // agreement and return immediately. there is no guarantee that this
@@ -364,14 +335,42 @@ func (rf *Raft) sendHeartBeat(server int, args *HeartBeatArgs, reply *HeartBeatR
 // if it's ever committed. the second return value is the current
 // Term. the third return value is true if this server believes it is
 // the leader.
+// Start() should return immediately, without waiting for the log appends to complete.
+// 思路是在接收到上层的command之后，转化为一个Log，然后保存到本地。这里先直接返回，然后在另外一个专门分发Log的goroutine中
+// 将这个日志fan out出去。另外那个专门分发Log的goroutine可以固定sleep 100ms，然后每次醒了之后，就判断自己是否是leader，
+// 如果不是leader，则继续睡觉，如果是leader，则遍历rf里面的所有peer，给每一个follower和candidate发送日志。发送日志的时候，
+// 给每一个不同的server启动一个新的goroutine来发送，这样就等于睡醒了之后，给每一个其他server发送完消息就不管了，继续去睡觉。如果其他server
+// 有回应的话，就是在新建的那个goroutine中来处理的。比如说更新nextIndex，加锁去更新。这样就算某一个节点特别慢，也不会拖累整体的流程。因为每
+// 一个server都是在独立的goroutine中进行处理的。并且就算某一个节点特别慢，导致第二次唤醒之后，又给他发了相同的日志，那么就需要他自己来保证这个
+// 幂等性了。
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
-
 	// Your code here (3B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	return index, term, isLeader
+	if rf.state != Leader {
+		return 0, rf.currentTerm, false
+	}
+
+	// 将command转化为一个LogEntry结构体
+	log := LogEntry{
+		data: command,
+		term: rf.currentTerm,
+	}
+
+	// index还是先查看本地的Log数组中的最后一个LogEntry的index是什么，logIndex从1开始
+	if len(rf.log) == 0 {
+		log.index = 1
+	} else {
+		// 如果本地的Log中已经有日志了，则新日志的index需要比原有的最后一条日志的index加一
+		lastEntry := rf.log[len(rf.log)-1]
+		log.index = lastEntry.index + 1
+	}
+
+	// 此时LogEntry已经构建好了，将它添加到Raft中的log数组中
+	rf.log = append(rf.log, log)
+
+	return log.index, log.term, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -437,6 +436,50 @@ func (rf *Raft) heartBeat() {
 		ms := 150
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
+}
+
+func (rf *Raft) sendLog() {
+	// 周期性的发送日志
+	//shouldSendLog := false
+	//sendLogArgs := make()
+
+	//for rf.killed() == false {
+	//	rf.mu.Lock()
+	//	shouldSendLog = false
+	//	if rf.state == Leader {
+	//		shouldSendLog = true
+	//
+	//		heartBeatArgs := HeartBeatArgs{}
+	//		heartBeatArgs.CandidateId = rf.me
+	//		heartBeatArgs.Term = rf.currentTerm
+	//	}
+	//
+	//	rf.mu.Unlock()
+
+	//if shouldSendLog {
+	//	for i, _ := range rf.peers {
+	//		if i == rf.me {
+	//			continue
+	//		}
+	//
+	//		go func(i int, args HeartBeatArgs) {
+	//			reply := HeartBeatReply{}
+	//			ok := rf.sendHeartBeat(i, &args, &reply)
+	//			if !ok {
+	//				// 针对已经不是leader的server还是会发心跳这个问题，可以把这个请求的args里面的term给打印出来，这样就能知道了
+	//				DPrintf("server[%d] send heart beat to %d, bug get fail,i am a leader? status:%v, args term is:%d", serverId, i, serverState, args.Term)
+	//			}
+	//			// todo 此处先不根据返回值来修改当前server的term值，有可能出现这样的情况：一个leader，独自发生了分区，然后他一直给
+	//			// todo 其它的server发送心跳。此时其它server已经进行了新的选举了，所以其它server的term可能比当前server的大，但是
+	//			// todo 此处并不根据这个心跳返回的term来更新本地server，而是希望通过新领导者的appendEntries或者是心跳请求来更新本地
+	//			// todo 的term。
+	//		}(i, heartBeatArgs)
+	//	}
+	//}
+
+	//	ms := 150
+	//	time.Sleep(time.Duration(ms) * time.Millisecond)
+	//}
 }
 
 func (rf *Raft) ticker() {
@@ -597,6 +640,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	//rf.SetElectionTime()
 	rf.startElectionTime = time.Now()
 	rf.electionInterval = 0
+
+	// 初始化日志分发相关的切片
+	rf.log = make([]LogEntry, 0)
+	rf.nextIndex = make([]int64, 0)
+	rf.matchIndex = make([]int64, 0)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
