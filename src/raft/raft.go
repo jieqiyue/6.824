@@ -531,9 +531,8 @@ func (rf *Raft) sendLogTicket() {
 			shouldSendLog = true
 
 			for i, _ := range rf.peers {
-				sendLogArgs := SendLogArgs{}
+				sendLogArgs := &allSendLogArgs[i]
 				// 此处不能使用append，要使用下标的方式每次都覆盖上次这个位置的值
-				allSendLogArgs[i] = sendLogArgs
 
 				// 如果这个follower的nextIndex是leader的最后一条日志的index + 1的位置，那么就认为没有新的日志要发送
 				// 所以这个nextIndex一开始需要初始化为len(rf.log) - 1的位置，表示将要发送的Log的下标。如果一开始的时候，leader一条日志都
@@ -570,7 +569,7 @@ func (rf *Raft) sendLogTicket() {
 				}
 				DPrintf("server[%d] prepare send log to %d, "+
 					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, send args term is:%d, msg type is:%v, papare to send log is:%v, papare to send log len is:%d",
-					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, sendLogArgs.Term, sendLogArgs.MsgType, sendLogArgs.Entries, len(sendLogArgs.Entries))
+					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, len(sendLogArgs.Entries))
 			}
 		}
 
