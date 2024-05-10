@@ -319,7 +319,7 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 	// 由于切片截取不包括最后的那个下标，所以这里要+1
 	rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
 
-	// 更新commitIndex
+	// 更新commitIndex,这个分支虽然可能leader并没有发送消息过来，但是还是需要进。因为可能要可以更新自己的commitIndex了。
 	if args.LeaderCommit > rf.commitIndex {
 		newCommitIndex := int(math.Min(float64(args.LeaderCommit), float64(rf.log[len(rf.log)-1].Index)))
 		if newCommitIndex > rf.commitIndex {
@@ -336,10 +336,12 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 
 			rf.commitIndex = newCommitIndex
 		}
-
 	}
 
-	DPrintf("server[%d]got heart beat, reset timeout, local Term is:%d, local status is:%d, args server id is:%d, args Term is:%d", rf.me, rf.currentTerm, rf.state, args.LeaderId, args.Term)
+	reply.Success = true
+
+	DPrintf("server[%d]got heart beat, reset timeout, local Term is:%d, local status is:%d, args server id is:%d, args Term is:%d,now i have:%v log",
+		rf.me, rf.currentTerm, rf.state, args.LeaderId, args.Term, rf.log)
 }
 
 // 此方法不使用锁保护，防止锁重入出现panic，需要调用方保证线程安全性
@@ -556,7 +558,7 @@ func (rf *Raft) sendLogTicket() {
 
 				// 因为nextIndex一定是大于等于1的，所以这里一定可以拿到preLog。
 				preLog := rf.log[rf.nextIndex[i]-1]
-				sendLogArgs.PrevLogTerm = preLog.Term
+				sendLogArgs.PrevLogIndex = preLog.Index
 				sendLogArgs.PrevLogTerm = preLog.Term
 
 				sendLogArgs.Entries = rf.log[rf.nextIndex[i]:]
