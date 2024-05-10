@@ -286,7 +286,7 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 	reply.Term = rf.currentTerm
 	// 1. 首先判断args的term，如果term小于自己的term，则直接返回
 	if args.Term < rf.currentTerm {
-		DPrintf("server[%d] got a log heart beat, but args Term less than local Term, request Term is:%d, request server id is:%d", rf.me, args.Term, args.LeaderId)
+		DPrintf("server[%d] got a log heart beat, but args Term less than local Term, request Term is:%d, current term is:%d, request server id is:%d", rf.me, args.Term, rf.currentTerm, args.LeaderId)
 		return
 	}
 
@@ -569,14 +569,15 @@ func (rf *Raft) sendLogTicket() {
 					sendLogArgs.MsgType = HeartBeatMsgType
 				}
 				DPrintf("server[%d] prepare send log to %d, "+
-					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, msg type is:%v",
-					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, sendLogArgs.MsgType)
+					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, send args term is:%d, msg type is:%v, papare to send log is:%v, papare to send log len is:%d",
+					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, sendLogArgs.Term, sendLogArgs.MsgType, sendLogArgs.Entries, len(sendLogArgs.Entries))
 			}
 		}
 
 		rf.mu.Unlock()
 
 		if shouldSendLog {
+			DPrintf("server[%d], term:%d, before send log to others, ths allSendLogArgs is:%v,", rf.me, rf.currentTerm, allSendLogArgs)
 			for i, _ := range rf.peers {
 				if i == rf.me {
 					continue
