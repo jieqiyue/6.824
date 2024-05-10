@@ -11,6 +11,14 @@ type HeartBeatReply struct {
 	Term int
 }
 
+type MsgType int
+
+const (
+	UnKnowMgsType MsgType = iota
+	HeartBeatMsgType
+	LogMsgType
+)
+
 type SendLogArgs struct {
 	Term         int
 	LeaderId     int
@@ -20,7 +28,7 @@ type SendLogArgs struct {
 	LeaderCommit int
 
 	// 不在和follower进行log复制的时候产生实际作用
-	ShouldSend bool
+	MsgType MsgType
 }
 
 type SendLogReply struct {

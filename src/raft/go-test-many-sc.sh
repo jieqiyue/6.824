@@ -12,7 +12,7 @@ for ((i=1; i<=100; i++)); do
 
     echo "Running test $i...." >> "$output_file"
     # 执行测试并将结果输出到对应的文件
-    go test -run 3A >> "$output_file"
+    go test -run 3B >> "$output_file"
     echo "end of test $i..." >> "$output_file"
     echo "end of test $i..."
 done

@@ -18,6 +18,7 @@ package raft
 //
 
 import (
+	"math"
 	//	"bytes"
 	"math/rand"
 	"sync"
@@ -28,7 +29,7 @@ import (
 	"6.5840/labrpc"
 )
 
-// as each Raft peer becomes aware that successive log entries are
+// ApplyMsg as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make(). set
 // CommandValid to true to indicate that the ApplyMsg contains a newly
@@ -274,33 +275,71 @@ func (rf *Raft) RequestHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
 func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 	// Your code here (3A, 3B).
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	defer func() {
+		// 将重置定时器的代码放在defer里面，防止某些特殊情况提前return的时候，没有执行到这个重置定时器的代码
+		if args.Term >= rf.currentTerm {
+			rf.SetElectionTime()
+		}
+		rf.mu.Unlock()
+	}()
 
 	reply.Term = rf.currentTerm
-
-	// 有两种情况会reply为false，一种是本地term大于args里面的term，一种是因为这个preLog对不上
-	if rf.currentTerm > args.Term || args.PrevLogIndex > len(rf.log)-1 || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-		reply.Success = false
-		reply.Term = rf.currentTerm
+	// 1. 首先判断args的term，如果term小于自己的term，则直接返回
+	if args.Term < rf.currentTerm {
+		DPrintf("server[%d] got a log heart beat, but args Term less than local Term, request Term is:%d, request server id is:%d", rf.me, args.Term, args.LeaderId)
 		return
 	}
 
-	// 如果请求的term大于等于本地的term，则需要将自己转为follower，并且更新自己的term
+	// 2. 如果请求的term大于等于本地的term，则需要将自己转为follower，并且更新自己的term
 	if args.Term > rf.currentTerm {
 		rf.AddCurrentTerm(args.Term)
 	}
 
-	// 到这个位置的时候，当前server的term一定是等于args的term的，此处需要判断一下，如果当前server是一个候选者，则将他的状态改为follower
+	// todo 先将这两个条件分开，方便查看日志, 正常来说不会进到这个if里面的
+	if args.PrevLogIndex > len(rf.log)-1 {
+		reply.Success = false
+		DPrintf("server[%d]discard %d server send heart log beat, because log is too new, local log dot not contain pre log, pre log term:%d, pre log index:%d",
+			rf.me, args.LeaderId, args.PrevLogTerm, args.PrevLogIndex)
+		return
+	}
+
+	// 当preLog是dummy log的时候，一定是能够符合的吧
+	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.Success = false
+		return
+	}
+
+	// 3. 这个代码得放在处理当本地term大于args term之后，因为当本地term大于args term的时候，可能是在选举，那么低term就不能影响高term的选举。
 	if rf.state == Candidate {
 		DPrintf("server[%d]got a append entries rpc, but current status is candidate,so change state to follower", rf.me)
 		rf.state = Follower
 		rf.voteFor = -1
 	}
 
-	// 判断这个位置是否有preLog的日志了，如果没有的话，返回false
+	// 由于切片截取不包括最后的那个下标，所以这里要+1
 	rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
-	// todo 如果当前server的状态是候选者状态，这个地方会不会影响他的选举？
-	rf.SetElectionTime()
+
+	// 更新commitIndex
+	if args.LeaderCommit > rf.commitIndex {
+		newCommitIndex := int(math.Min(float64(args.LeaderCommit), float64(rf.log[len(rf.log)-1].Index)))
+		if newCommitIndex > rf.commitIndex {
+			// 往applyCh发送applyMsg
+			for beginIndex := rf.commitIndex + 1; beginIndex <= newCommitIndex; beginIndex++ {
+				applyMsg := ApplyMsg{
+					CommandValid: true,
+					Command:      rf.log[beginIndex].Data,
+					CommandIndex: beginIndex,
+				}
+
+				rf.applyCh <- applyMsg
+			}
+
+			rf.commitIndex = newCommitIndex
+		}
+
+	}
+
+	DPrintf("server[%d]got heart beat, reset timeout, local Term is:%d, local status is:%d, args server id is:%d, args Term is:%d", rf.me, rf.currentTerm, rf.state, args.LeaderId, args.Term)
 }
 
 // 此方法不使用锁保护，防止锁重入出现panic，需要调用方保证线程安全性
@@ -362,6 +401,11 @@ func (rf *Raft) sendLog(server int, args *SendLogArgs, reply *SendLogReply) bool
 	return ok
 }
 
+// 获取到最后一条日志，因为有dummy log，所以不用担心下标的问题
+func (rf *Raft) getLastLog() LogEntry {
+	return rf.log[len(rf.log)-1]
+}
+
 // Start the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -397,17 +441,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term: rf.currentTerm,
 	}
 
-	// index还是先查看本地的Log数组中的最后一个LogEntry的index是什么，logIndex从1开始
-	if len(rf.log) == 0 {
-		log.Index = 0
-	} else {
-		// 如果本地的Log中已经有日志了，则新日志的index需要比原有的最后一条日志的index加一
-		lastEntry := rf.log[len(rf.log)-1]
-		log.Index = lastEntry.Index + 1
-	}
+	// 如果本地的Log中已经有日志了，则新日志的index需要比原有的最后一条日志的index加一
+	log.Index = rf.getLastLog().Index + 1
 
 	// 此时LogEntry已经构建好了，将它添加到Raft中的log数组中
 	rf.log = append(rf.log, log)
+	DPrintf("server[%d]get a log, current term is:%d, current state is:%v, all log is:%v", rf.me, rf.currentTerm, rf.state, rf.log)
 
 	return log.Index, log.Term, true
 }
@@ -487,7 +526,8 @@ func (rf *Raft) sendLogTicket() {
 		shouldSendLog = false
 		// 如果当前是leader，并且自己含有日志的话，则将这次分发日志的参数都构建好
 		// todo 这里直接使用rf.log来判断leader是否有日志要发送，后续引入了snapshot，这个地方是否需要更改？
-		if rf.state == Leader && len(rf.log) > 0 {
+		// 将心跳和发送日志合二为一。所以这里不要判断rf.log的len是否大于0了，而只需要判断是否是leader就行了。
+		if rf.state == Leader {
 			shouldSendLog = true
 
 			for i, _ := range rf.peers {
@@ -499,36 +539,38 @@ func (rf *Raft) sendLogTicket() {
 				// 所以这个nextIndex一开始需要初始化为len(rf.log) - 1的位置，表示将要发送的Log的下标。如果一开始的时候，leader一条日志都
 				// 没有，那么会初始化为0，否则初始化为len(rf.log) - 1.当初始化为0的时候，这个条件也会成立，所以也不会再发送RPC了。而当leader
 				// 后续添加了一条log之后，len(rf.log) 就变成1了，此时的nextIndex还是0，那么不成立也就会继续往下去发送日志了
-				if i == rf.me || rf.nextIndex[i] >= len(rf.log) {
-					sendLogArgs.ShouldSend = false
+
+				// 将rf.nextIndex[i] >= len(rf.log)这个条件去掉。因为现在已经把发送心跳和发送日志的合二为一了。那么也就不需要用那个比较follower和
+				// leader是否跟上了，因为无论怎样都要发送RPC的，只是如果是跟上了的话，发送的数据是空的，只用来重置定时器。
+				if i == rf.me {
 					continue
 				}
 
-				// log
-				DPrintf("server[%d] prepare send log to %d, the nextIndex is:%d, len of log is:%d", rf.me, i, rf.nextIndex[i], len(rf.log))
 				if rf.nextIndex[i] < 0 {
 					DPrintf("error,server[%d] found %d nextIndex less than 0", rf.me, i)
 					rf.nextIndex[i] = 0
 				}
 
 				// todo 此时是否需要判断nextIndex是否是大于0的，有可能某一个follower的nextIndex一直减少，一直到0以下了
-				sendLogArgs.ShouldSend = true
 				sendLogArgs.LeaderId = rf.me
 				sendLogArgs.Term = rf.currentTerm
 
-				// 到这个位置的话，leader的log一定是含有nextIndex[i]这个下标位置的log的，并且nextIndex[i]不可能会小于0，至少都是0，
-				// 而当如果nextIndex[i]是0的话，那么是没有preLog的，而当nextIndex[i]大于0的话，则一定有前一条日志。
-				if rf.nextIndex[i] == 0 {
-					sendLogArgs.PrevLogTerm = -1
-					sendLogArgs.PrevLogIndex = -1
-				} else {
-					preLog := rf.log[rf.nextIndex[i]-1]
-					sendLogArgs.PrevLogTerm = preLog.Term
-					sendLogArgs.PrevLogTerm = preLog.Term
-				}
+				// 因为nextIndex一定是大于等于1的，所以这里一定可以拿到preLog。
+				preLog := rf.log[rf.nextIndex[i]-1]
+				sendLogArgs.PrevLogTerm = preLog.Term
+				sendLogArgs.PrevLogTerm = preLog.Term
 
 				sendLogArgs.Entries = rf.log[rf.nextIndex[i]:]
 				sendLogArgs.LeaderCommit = rf.commitIndex
+
+				// === for log
+				sendLogArgs.MsgType = LogMsgType
+				if len(sendLogArgs.Entries) == 0 {
+					sendLogArgs.MsgType = HeartBeatMsgType
+				}
+				DPrintf("server[%d] prepare send log to %d, "+
+					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, msg type is:%v",
+					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, sendLogArgs.MsgType)
 			}
 		}
 
@@ -536,22 +578,26 @@ func (rf *Raft) sendLogTicket() {
 
 		if shouldSendLog {
 			for i, _ := range rf.peers {
-				if i == rf.me || !allSendLogArgs[i].ShouldSend {
+				if i == rf.me {
 					continue
 				}
 
-				go func(i int) {
+				// todo 不能直接使用外部的allSendLogArgs，而是要将这个作为参数传入
+				go func(i int, args SendLogArgs) {
 					reply := SendLogReply{}
 					//  for update commitIndex,这里不能用args的term，而是应该用当前leader的term，因为日志的term有可能是之前的term的，
 					// 而这里要拿到的是当前发出这个请求的leader的term。
-					leaderTerm := allSendLogArgs[i].Term
-					lastSendLogIndex := allSendLogArgs[i].Entries[len(allSendLogArgs[i].Entries)-1].Index
-					lastSendLogTerm := allSendLogArgs[i].Entries[len(allSendLogArgs[i].Entries)-1].Term
+					leaderTerm := args.Term
+					// lastSendLogIndex := args.Entries[len(allSendLogArgs[i].Entries)-1].Index
+					// lastSendLogTerm := args.Entries[len(allSendLogArgs[i].Entries)-1].Term
+					// 注意这个如果toSendCommond是空的话，那么在接收到这个请求的success返回的时候不应该去更新nextIndex。如果不为空的话，
+					// 则表示刚刚发出的这些日志都已经被这个follower保存了。那么就得更新为最后一个LogEntry的index+1的位置
+					toSendEntries := args.Entries
 					// for log
-					preLogTerm := allSendLogArgs[i].PrevLogTerm
-					preLogIndex := allSendLogArgs[i].PrevLogIndex
+					preLogTerm := args.PrevLogTerm
+					preLogIndex := args.PrevLogIndex
 
-					ok := rf.sendLog(i, &allSendLogArgs[i], &reply)
+					ok := rf.sendLog(i, &args, &reply)
 					if !ok {
 						DPrintf("server[%d] send log to %d, bug get fail, args Term is:%d, args Index is:%d", rf.me, i, preLogTerm, preLogIndex)
 						return
@@ -575,24 +621,41 @@ func (rf *Raft) sendLogTicket() {
 							// 更新nextIndex,matchIndex也更新为这次请求设置的值，这个地方还需要判断是否之前的大，如果大的话，才去更新，
 							// 因为有可能这次请求执行的很慢，导致leader下一次重发了这个请求，并且重发了后面的请求，然后后面的请求都已经执行成功了。
 							// 所以matchIndex已经被更新到更大的值了，此时如果不判断直接设置的话，会导致matchIndex回退。
-							if lastSendLogIndex > rf.matchIndex[i] {
-								rf.matchIndex[i] = lastSendLogIndex
-							}
-							if lastSendLogIndex+1 > rf.nextIndex[i] {
-								rf.nextIndex[i] = lastSendLogIndex + 1
-							}
-
-							// 更新commitIndex，注意这里不能提交之前term的日志，只能提交本term的日志
-							matchCount := 0
-							for _, matchIndex := range rf.matchIndex {
-								if matchIndex >= rf.matchIndex[i] {
-									matchCount++
+							if len(toSendEntries) > 0 {
+								lastEntry := toSendEntries[len(toSendEntries)-1]
+								if lastEntry.Index > rf.matchIndex[i] {
+									rf.matchIndex[i] = lastEntry.Index
 								}
-							}
+								if lastEntry.Index+1 > rf.nextIndex[i] {
+									rf.nextIndex[i] = lastEntry.Index + 1
+								}
 
-							// 注意这里要判断这个日志的term是否是本leader的term，如果不是则不提交
-							if rf.matchIndex[i] > rf.commitIndex && matchCount > len(rf.peers)/2 && rf.currentTerm == lastSendLogTerm {
-								rf.commitIndex = rf.matchIndex[i]
+								// 开始修改commitIndex,这里不能拿最后一条日志来比较matchIndex
+								for beginIndex := rf.commitIndex + 1; beginIndex < len(rf.log)-1; beginIndex++ {
+									matchCount := 0
+									for _, matchIndex := range rf.matchIndex {
+										if matchIndex >= beginIndex {
+											matchCount++
+										}
+									}
+
+									if matchCount <= len(rf.peers)/2 {
+										break
+									}
+
+									// 更新commitIndex，注意这里不能提交之前term的日志，只能提交本term的日志
+									if beginIndex > rf.commitIndex && rf.currentTerm == rf.log[beginIndex].Term {
+										rf.commitIndex = beginIndex
+										applyMsg := ApplyMsg{
+											CommandValid: true,
+											Command:      rf.log[beginIndex].Data,
+											CommandIndex: beginIndex,
+										}
+
+										rf.applyCh <- applyMsg
+										DPrintf("server[%d] apply a log entry to applyCh, log term is:%d, log index is:%d", rf.me, rf.log[beginIndex].Term, rf.log[beginIndex].Index)
+									}
+								}
 
 							}
 						} else {
@@ -603,7 +666,7 @@ func (rf *Raft) sendLogTicket() {
 							// todo 这里暂时不更新matchIndex，而去依赖当reply为success的时候去更新
 						}
 					}
-				}(i)
+				}(i, allSendLogArgs[i])
 			}
 		}
 
@@ -744,6 +807,22 @@ func (rf *Raft) ticker() {
 	}
 }
 
+// 该函数不加锁，需要调用者加锁
+// 对于启动的时候初始化nextIndex的一层含义是不能跳过某一些已有的Log不去同步。对于初始化之后，还是只有一条dummy log的情况，
+// 设置nextIndex为1.
+func (rf *Raft) resetRaftIndex() {
+	for i, _ := range rf.nextIndex {
+		// 这里直接设置为log的长度，因为有个dummy节点，所以实际上可以直接用这个数字当做log数组的下标来用了
+		if len(rf.log) == 1 {
+			rf.nextIndex[i] = 1
+		} else {
+			rf.nextIndex[i] = len(rf.log) - 1
+		}
+
+		rf.matchIndex[i] = 0
+	}
+}
+
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays
@@ -777,15 +856,28 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// 初始化日志分发相关的切片
 	rf.log = make([]LogEntry, 0)
-	rf.nextIndex = make([]int, 0)
-	rf.matchIndex = make([]int, 0)
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+
+	// 设置一个dummy log
+	rf.log = append(rf.log, LogEntry{
+		Term:  -1,
+		Index: 0,
+		Data:  nil,
+	})
+
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
+
+	// 在读取完持久化配置之后,初始化nextIndex和matchIndex
+	rf.resetRaftIndex()
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
 
-	go rf.heartBeat()
+	// go rf.heartBeat()
+
+	go rf.sendLogTicket()
 
 	return rf
 }
