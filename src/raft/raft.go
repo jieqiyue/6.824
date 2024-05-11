@@ -276,6 +276,7 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 	// Your code here (3A, 3B).
 	rf.mu.Lock()
 	defer func() {
+		reply.Term = rf.currentTerm
 		// 将重置定时器的代码放在defer里面，防止某些特殊情况提前return的时候，没有执行到这个重置定时器的代码
 		if args.Term >= rf.currentTerm {
 			rf.SetElectionTime()
@@ -283,7 +284,6 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 		rf.mu.Unlock()
 	}()
 
-	reply.Term = rf.currentTerm
 	// 1. 首先判断args的term，如果term小于自己的term，则直接返回
 	if args.Term < rf.currentTerm {
 		DPrintf("server[%d] got a log heart beat, but args Term less than local Term, request Term is:%d, current term is:%d, request server id is:%d", rf.me, args.Term, rf.currentTerm, args.LeaderId)
@@ -332,6 +332,7 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 				}
 
 				rf.applyCh <- applyMsg
+				DPrintf("server[%d]apply log to applych,local term is:%d, log term is:%d, log index is:%d", rf.me, rf.currentTerm, rf.log[beginIndex].Term, rf.log[beginIndex].Index)
 			}
 
 			rf.commitIndex = newCommitIndex
@@ -340,8 +341,8 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 
 	reply.Success = true
 
-	DPrintf("server[%d]got heart beat, reset timeout, local Term is:%d, local status is:%d, args server id is:%d, args Term is:%d,now i have:%v log",
-		rf.me, rf.currentTerm, rf.state, args.LeaderId, args.Term, rf.log)
+	DPrintf("server[%d]got heart beat, reset timeout, local Term is:%d, local status is:%d, args server id is:%d, args Term is:%d,now i have:%v log, commit index is:%d",
+		rf.me, rf.currentTerm, rf.state, args.LeaderId, args.Term, rf.log, rf.commitIndex)
 }
 
 // 此方法不使用锁保护，防止锁重入出现panic，需要调用方保证线程安全性
@@ -358,6 +359,10 @@ func (rf *Raft) AddCurrentTerm(term int) {
 	// 虽然这个voteFor没有明确在论文中指出需要设置为什么值，这里我考虑是需要设置为-1的
 	rf.voteFor = -1
 	//rf.receiveNew = true
+	// 当一个分区的follower，它一直在自我选举，导致自身的term很大。在重新加入集群之后，新的leader给它发送心跳之后，或者是接收到它的投票请求之后，会更新
+	// 自身的term为这个follower的term。并且此时会来执行这个SetElectionTime，又由于这个SetElectionTime设置的超时时间是800ms+的，但是那边分区出去的
+	// follower是每隔150ms就要重新选举一次，导致每次都是这个分区的follower先发起选举。但是又由于它没有最新的日志，导致成为不了leader。但是其他有最新log的
+	// 又由于定时器没有超时所以不进行选举。造成集群出问题了。
 	rf.SetElectionTime()
 }
 
@@ -448,6 +453,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	// 此时LogEntry已经构建好了，将它添加到Raft中的log数组中
 	rf.log = append(rf.log, log)
+	rf.matchIndex[rf.me] = log.Index
 	DPrintf("server[%d]get a log, current term is:%d, current state is:%v, all log is:%v", rf.me, rf.currentTerm, rf.state, rf.log)
 
 	return log.Index, log.Term, true
@@ -570,8 +576,8 @@ func (rf *Raft) sendLogTicket() {
 					sendLogArgs.MsgType = HeartBeatMsgType
 				}
 				DPrintf("server[%d] prepare send log to %d, "+
-					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, send args term is:%d, msg type is:%v, papare to send log is:%v, papare to send log len is:%d",
-					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, len(sendLogArgs.Entries))
+					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, send args term is:%d, msg type is:%v, papare to send log is:%v, args commitIndex is:%d",
+					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, sendLogArgs.LeaderCommit)
 			}
 		}
 
@@ -633,8 +639,10 @@ func (rf *Raft) sendLogTicket() {
 								}
 
 								// 开始修改commitIndex,这里不能拿最后一条日志来比较matchIndex
-								for beginIndex := rf.commitIndex + 1; beginIndex < len(rf.log)-1; beginIndex++ {
+								for beginIndex := rf.commitIndex + 1; beginIndex < len(rf.log); beginIndex++ {
 									matchCount := 0
+									DPrintf("server[%d]begin to cacu match count, begin index is:%d, len of log is:%d, this is:%d server reply,"+
+										"and now match index is:%v,commit index is:%d", rf.me, beginIndex, len(rf.log), i, rf.matchIndex, rf.commitIndex)
 									for _, matchIndex := range rf.matchIndex {
 										if matchIndex >= beginIndex {
 											matchCount++
@@ -695,6 +703,7 @@ func (rf *Raft) ticker() {
 		if time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond && (rf.state == Follower || rf.state == Candidate) {
 			DPrintf("server[%d]should begin a election", rf.me)
 			shouldElection = true
+			rf.SetElectionTime()
 			rf.currentTerm++
 			rf.state = Candidate
 			rf.voteFor = rf.me

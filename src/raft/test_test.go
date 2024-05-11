@@ -204,20 +204,24 @@ func TestFollowerFailure3B(t *testing.T) {
 
 	// disconnect one follower from the network.
 	leader1 := cfg.checkOneLeader()
+	DPrintf("TestFollowerFailure3B: now leader is:%d, make %d disconnect ... ", leader1, (leader1+1)%servers)
 	cfg.disconnect((leader1 + 1) % servers)
 
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
+	DPrintf("TestFollowerFailure3B:the leader and remaining follower should beable to agree despite the disconnected follower.")
 	cfg.one(102, servers-1, false)
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(103, servers-1, false)
 
 	// disconnect the remaining follower
 	leader2 := cfg.checkOneLeader()
+	DPrintf("TestFollowerFailure3B: now leader is:%d, make two disconnect, one is:%d, another one is:%d ... ", leader2, (leader2+1)%servers, (leader2+2)%servers)
 	cfg.disconnect((leader2 + 1) % servers)
 	cfg.disconnect((leader2 + 2) % servers)
 
 	// submit a command.
+	DPrintf("TestFollowerFailure3B:i am going to start a 104 message to leader:%d, it is still in the cluster,so it can be submit success.", leader2)
 	index, _, ok := cfg.rafts[leader2].Start(104)
 	if ok != true {
 		t.Fatalf("leader rejected Start()")
@@ -230,6 +234,7 @@ func TestFollowerFailure3B(t *testing.T) {
 
 	// check that command 104 did not commit.
 	n, _ := cfg.nCommitted(index)
+	DPrintf("begin to test how many server commit index:%d is commited? it is %d commited.and now leader:%d matchindex is:%v", index, n, leader2, cfg.rafts[leader2].matchIndex)
 	if n > 0 {
 		t.Fatalf("%v committed but no majority", n)
 	}
@@ -286,28 +291,41 @@ func TestFailAgree3B(t *testing.T) {
 
 	cfg.begin("Test (3B): agreement after follower reconnects")
 
+	DPrintf("TestFailAgree3B:begin to test cmd:101 is commited?excep commit is 3")
 	cfg.one(101, servers, false)
 
 	// disconnect one follower from the network.
+	// 将leader+1这个机器断连，此时这个机器其实是有101这条日志的。所以nextIndex应该是2.
+	// 而且这个断连的机器是一个follower，所以他会一直超时选举，在后面重新加入集群之后，需要重新发起一次选举。
 	leader := cfg.checkOneLeader()
+	DPrintf("TestFailAgree3B:begin to disconnect server:%d", (leader+1)%servers)
 	cfg.disconnect((leader + 1) % servers)
 
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
+	DPrintf("TestFailAgree3B:the leader and remaining follower should beable to agree despite the disconnected follower.")
+	DPrintf("TestFailAgree3B:begin to test cmd 102 is 2 server commited?")
 	cfg.one(102, servers-1, false)
+	DPrintf("TestFailAgree3B:begin to test cmd 103 is 2 server commited?")
 	cfg.one(103, servers-1, false)
 	time.Sleep(RaftElectionTimeout)
+	DPrintf("TestFailAgree3B:begin to test cmd 104 is 2 server commited?")
 	cfg.one(104, servers-1, false)
+
+	DPrintf("TestFailAgree3B:begin to test cmd 105 is 2 server commited?")
 	cfg.one(105, servers-1, false)
 
 	// re-connect
+	DPrintf("TestFailAgree3B:make server:%d reconnect to cluster", (leader+1)%servers)
 	cfg.connect((leader + 1) % servers)
 
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
 	// on new commands.
+	DPrintf("TestFailAgree3B:begin to test cmd 106 is 3 server commited?")
 	cfg.one(106, servers, true)
 	time.Sleep(RaftElectionTimeout)
+	DPrintf("TestFailAgree3B:begin to test cmd 107 is 3 server commited?")
 	cfg.one(107, servers, true)
 
 	cfg.end()
