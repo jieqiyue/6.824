@@ -233,7 +233,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	// 这里的判断不能使用args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex，而是要使用
-	if args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex {
+	if args.Term > localLastTerm || (args.Term == localLastTerm && args.LastLogIndex >= localLastIndex) {
 		// todo 这里还是直接设置一下true，减少无效的选举，这个设置receiveNew是否需要移动到defer里面去
 		//rf.receiveNew = true
 		rf.voteFor = args.CandidateId
