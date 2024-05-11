@@ -232,6 +232,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		localLastTerm = rf.log[len(rf.log)-1].Term
 	}
 
+	// 这里的判断不能使用args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex，而是要使用
 	if args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex {
 		// todo 这里还是直接设置一下true，减少无效的选举，这个设置receiveNew是否需要移动到defer里面去
 		//rf.receiveNew = true
@@ -655,18 +656,25 @@ func (rf *Raft) sendLogTicket() {
 
 									// 更新commitIndex，注意这里不能提交之前term的日志，只能提交本term的日志
 									if beginIndex > rf.commitIndex && rf.currentTerm == rf.log[beginIndex].Term {
-										rf.commitIndex = beginIndex
-										applyMsg := ApplyMsg{
-											CommandValid: true,
-											Command:      rf.log[beginIndex].Data,
-											CommandIndex: beginIndex,
+										// 由于leader不能提交之前term的日志，只能间接提交之前term的日志，就导致有可能leader在某一个之后的时刻更新自身的
+										// commitIndex是跳过了前面的一些日志的。但是往applyCh里面发送applyMsg还是必须是连续的，所以这个地方需要遍历从
+										// rf.commitIndex + 1到beginIndex之间这一段的日志，并提交到applyCh。
+										for toApplyIndex := rf.commitIndex + 1; toApplyIndex <= beginIndex; toApplyIndex++ {
+											applyMsg := ApplyMsg{
+												CommandValid: true,
+												Command:      rf.log[toApplyIndex].Data,
+												CommandIndex: toApplyIndex,
+											}
+
+											rf.applyCh <- applyMsg
+											DPrintf("server[%d] apply a log entry to applyCh, log term is:%d, log index is:%d", rf.me, rf.log[toApplyIndex].Term, rf.log[toApplyIndex].Index)
 										}
 
-										rf.applyCh <- applyMsg
-										DPrintf("server[%d] apply a log entry to applyCh, log term is:%d, log index is:%d", rf.me, rf.log[beginIndex].Term, rf.log[beginIndex].Index)
+										rf.commitIndex = beginIndex
 									}
 								}
 
+								DPrintf("server[%d]after append entries to %d server request, now it commit index is:%d", rf.me, i, rf.commitIndex)
 							}
 						} else {
 							// 如果返回失败，则需要递减nextIndex的值,往前退一个值，正常来说，对于index为0的日志，是不可能会添加失败的。
