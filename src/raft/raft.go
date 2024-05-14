@@ -206,6 +206,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// 这种情况应该要先处理，就是当请求的term大于当前的term的时候
 	if args.Term > rf.currentTerm {
 		rf.AddCurrentTerm(args.Term)
+		DPrintf("server[%d]handler %d vote request, args term is:%d bigger than local term:%d, so make self to follower,and votefor is:%d,status is:%d",
+			rf.me, args.CandidateId, args.Term, rf.currentTerm, rf.voteFor, rf.state)
 	}
 
 	// 2. 如果请求的term等于当前的term，并且自己当前的voteFor字段等于args里面的candidateId
@@ -232,8 +234,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		localLastTerm = rf.log[len(rf.log)-1].Term
 	}
 
+	DPrintf("server[%d]begin to logic handler:%d vote request for term:%d, lastLogIndex is:%d, lastLogTerm is:%d", rf.me, args.CandidateId, args.Term, localLastIndex, localLastTerm)
 	// 这里的判断不能使用args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex，而是要使用
-	if args.Term > localLastTerm || (args.Term == localLastTerm && args.LastLogIndex >= localLastIndex) {
+	if args.LastLogTerm > localLastTerm || (args.LastLogTerm == localLastTerm && args.LastLogIndex >= localLastIndex) {
 		// todo 这里还是直接设置一下true，减少无效的选举，这个设置receiveNew是否需要移动到defer里面去
 		//rf.receiveNew = true
 		rf.voteFor = args.CandidateId
@@ -576,9 +579,9 @@ func (rf *Raft) sendLogTicket() {
 				if len(sendLogArgs.Entries) == 0 {
 					sendLogArgs.MsgType = HeartBeatMsgType
 				}
-				DPrintf("server[%d] prepare send log to %d, "+
+				DPrintf("server[%d] prepare send log to %d,leader have %v log, "+
 					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, send args term is:%d, msg type is:%v, papare to send log is:%v, args commitIndex is:%d",
-					rf.me, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, sendLogArgs.LeaderCommit)
+					rf.me, rf.log, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, sendLogArgs.LeaderCommit)
 			}
 		}
 
@@ -615,6 +618,7 @@ func (rf *Raft) sendLogTicket() {
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
 					if reply.Term > rf.currentTerm {
+						DPrintf("server[%d]reciver %d server reply, and found local term is less, so change local term from:%d to:%d", rf.me, i, rf.currentTerm, reply.Term)
 						rf.AddCurrentTerm(reply.Term)
 						return
 					}
@@ -795,6 +799,7 @@ func (rf *Raft) ticker() {
 				if rf.currentTerm == args.Term && rf.state == Candidate {
 					if voteCount > len(rf.peers)/2 {
 						rf.state = Leader
+						rf.resetRaftIndex()
 						DPrintf("server[%d], become a leader, got %d tickets", rf.me, voteCount)
 					}
 				}

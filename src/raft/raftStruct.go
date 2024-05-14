@@ -19,7 +19,7 @@ const (
 	LogMsgType
 )
 
-// {5 0 5 2 [{2 6 106}] 5 2}
+// {2 1 1 2 [{2 2 102}] 1 2}
 type SendLogArgs struct {
 	Term         int
 	LeaderId     int

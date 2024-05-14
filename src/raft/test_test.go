@@ -305,13 +305,13 @@ func TestFailAgree3B(t *testing.T) {
 	// able to agree despite the disconnected follower.
 	DPrintf("TestFailAgree3B:the leader and remaining follower should beable to agree despite the disconnected follower.")
 	DPrintf("TestFailAgree3B:begin to test cmd 102 is 2 server commited?")
+
 	cfg.one(102, servers-1, false)
 	DPrintf("TestFailAgree3B:begin to test cmd 103 is 2 server commited?")
 	cfg.one(103, servers-1, false)
 	time.Sleep(RaftElectionTimeout)
 	DPrintf("TestFailAgree3B:begin to test cmd 104 is 2 server commited?")
 	cfg.one(104, servers-1, false)
-
 	DPrintf("TestFailAgree3B:begin to test cmd 105 is 2 server commited?")
 	cfg.one(105, servers-1, false)
 
@@ -528,40 +528,55 @@ func TestBackup3B(t *testing.T) {
 
 	cfg.begin("Test (3B): leader backs up quickly over incorrect follower logs")
 
-	cfg.one(rand.Int(), servers, true)
+	ran := rand.Int()
+	DPrintf("TestBackup3B:make a rand num is:%d", ran)
+	cfg.one(ran, servers, true)
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
+	DPrintf("TestBackup3B:now leader is:%d, and make %d, %d ,%d to disconnect", leader1, (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
+	DPrintf("TestBackup3B:%d, %d ,%d is all disconnect success", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 
 	// submit lots of commands that won't commit
 	for i := 0; i < 50; i++ {
 		cfg.rafts[leader1].Start(rand.Int())
 	}
 
+	DPrintf("TestBackup3B:send 50 log entry to leader1:%d, but now it is only %d, %d in cluster, so it commitIndex should equals"+
+		" to:1", leader1, leader1, (leader1+1)%servers)
 	time.Sleep(RaftElectionTimeout / 2)
-
+	DPrintf("TestBackup3B:sleep over")
+	DPrintf("TestBackup3B:begin to disconnect %d and %d, this two server should make the 50 entry log to same", (leader1+0)%servers, (leader1+1)%servers)
+	// leader1和leader1+1这两个服务器还是会将那50个给弄成一致的
 	cfg.disconnect((leader1 + 0) % servers)
 	cfg.disconnect((leader1 + 1) % servers)
 
 	// allow other partition to recover
+	// 这三个服务器放到集群里面了，所以他们会选举出新的leader
+	DPrintf("TestBackup3B:make %d , %d, %d back to cluster", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 	cfg.connect((leader1 + 2) % servers)
 	cfg.connect((leader1 + 3) % servers)
 	cfg.connect((leader1 + 4) % servers)
+	DPrintf("TestBackup3B:make %d , %d, %d already back to cluster", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 
 	// lots of successful commands to new group.
+	DPrintf("TestBackup3B:begin to make 50 log entry to commited")
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
 
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
+	DPrintf("TestBackup3B:now new leader is:%d, and commitIndex should 51", leader2)
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
+	// 从新的集群中寻找一个非leader的剥离出去
+	DPrintf("TestBackup3B:now make %d disconnect", other)
 	cfg.disconnect(other)
 
 	// lots more commands that won't commit
@@ -569,26 +584,37 @@ func TestBackup3B(t *testing.T) {
 		cfg.rafts[leader2].Start(rand.Int())
 	}
 
+	// 此时继续给50条日志，并且不会被提交的，但是剩下的两个会达成共识
+	DPrintf("TestBackup3B:the 50 entry should not make agreement")
 	time.Sleep(RaftElectionTimeout / 2)
 
 	// bring original leader back to life,
+	DPrintf("make every one disconnect to cluster")
 	for i := 0; i < servers; i++ {
 		cfg.disconnect(i)
 	}
+
+	// make every one disconnect to cluster
+	DPrintf("make %d, %d, %d back to cluster", (leader1+0)%servers, (leader1+1)%servers, other)
 	cfg.connect((leader1 + 0) % servers)
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
 
+	DPrintf("make last 50 log entry to be same.")
 	// lots of successful commands to new group.
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
 
 	// now everyone
+	DPrintf("now connect every one to cluster")
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}
-	cfg.one(rand.Int(), servers, true)
+
+	lastLog := rand.Int()
+	DPrintf("now make last log entry:%d to be same", lastLog)
+	cfg.one(lastLog, servers, true)
 
 	cfg.end()
 }
