@@ -528,9 +528,9 @@ func TestBackup3B(t *testing.T) {
 
 	cfg.begin("Test (3B): leader backs up quickly over incorrect follower logs")
 
-	ran := rand.Int()
-	DPrintf("TestBackup3B:make a rand num is:%d", ran)
-	cfg.one(ran, servers, true)
+	//ran := rand.Int()
+	DPrintf("TestBackup3B:make a rand num is:%d", 0)
+	cfg.one(0, servers, true)
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
@@ -541,8 +541,9 @@ func TestBackup3B(t *testing.T) {
 	DPrintf("TestBackup3B:%d, %d ,%d is all disconnect success", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 
 	// submit lots of commands that won't commit
+	// 1 - 50 是不会提交的，并且只会出现在leader1和leader1 + 1这两个机器上面。
 	for i := 0; i < 50; i++ {
-		cfg.rafts[leader1].Start(rand.Int())
+		cfg.rafts[leader1].Start(i + 1)
 	}
 
 	DPrintf("TestBackup3B:send 50 log entry to leader1:%d, but now it is only %d, %d in cluster, so it commitIndex should equals"+
@@ -553,7 +554,15 @@ func TestBackup3B(t *testing.T) {
 	// leader1和leader1+1这两个服务器还是会将那50个给弄成一致的
 	cfg.disconnect((leader1 + 0) % servers)
 	cfg.disconnect((leader1 + 1) % servers)
-
+	DPrintf("=============first to print every server log=============")
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, leader1, cfg.rafts[leader1].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+1)%servers, cfg.rafts[(leader1+1)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+2)%servers, cfg.rafts[(leader1+2)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+3)%servers, cfg.rafts[(leader1+3)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+4)%servers, cfg.rafts[(leader1+4)%servers].log)
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
 	// allow other partition to recover
 	// 这三个服务器放到集群里面了，所以他们会选举出新的leader
 	DPrintf("TestBackup3B:make %d , %d, %d back to cluster", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
@@ -565,12 +574,28 @@ func TestBackup3B(t *testing.T) {
 	// lots of successful commands to new group.
 	DPrintf("TestBackup3B:begin to make 50 log entry to commited")
 	for i := 0; i < 50; i++ {
-		cfg.one(rand.Int(), 3, true)
+		cfg.one(51+i, 3, true)
 	}
 
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
 	DPrintf("TestBackup3B:now new leader is:%d, and commitIndex should 51", leader2)
+	DPrintf("=============second to print every server log=============")
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, leader1, cfg.rafts[leader1].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+1)%servers, cfg.rafts[(leader1+1)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+2)%servers, cfg.rafts[(leader1+2)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+3)%servers, cfg.rafts[(leader1+3)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+4)%servers, cfg.rafts[(leader1+4)%servers].log)
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	// leader1  			0 and 1-50     un commit
+	// leader1 + 1  		0 and 1-50     un commit
+	// leader1 + 2			0 and 51-100   commit
+	// leader1 + 3          0 and 51-100   commit
+	// leader1 + 4          0 and 51-100   commit
+
+	// 从2，3，4中选举一个剥离出去
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers
@@ -581,8 +606,24 @@ func TestBackup3B(t *testing.T) {
 
 	// lots more commands that won't commit
 	for i := 0; i < 50; i++ {
-		cfg.rafts[leader2].Start(rand.Int())
+		cfg.rafts[leader2].Start(101 + i)
 	}
+
+	// leader1  			[0 commit] , [1-50   un commit]
+	// leader1 + 1  		[0 commit] , [1-50   un commit]
+	// leader1 + 2			[0 commit] , [51-100  commit]    							这是other		leader1 + 2 并且非 leader2 剥离
+	// leader1 + 3          [0 commit] , [51-100  commit] ,  [101 - 150 un commit] 						leader2
+	// leader1 + 4          [0 commit] , [51-100  commit] , [101 - 150 un commit]
+
+	DPrintf("=============forth to print every server log=============")
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, leader1, cfg.rafts[leader1].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+1)%servers, cfg.rafts[(leader1+1)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+2)%servers, cfg.rafts[(leader1+2)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+3)%servers, cfg.rafts[(leader1+3)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+4)%servers, cfg.rafts[(leader1+4)%servers].log)
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
 
 	// 此时继续给50条日志，并且不会被提交的，但是剩下的两个会达成共识
 	DPrintf("TestBackup3B:the 50 entry should not make agreement")
@@ -603,8 +644,23 @@ func TestBackup3B(t *testing.T) {
 	DPrintf("make last 50 log entry to be same.")
 	// lots of successful commands to new group.
 	for i := 0; i < 50; i++ {
-		cfg.one(rand.Int(), 3, true)
+		cfg.one(151+i, 3, true)
 	}
+	DPrintf("=============fivth to print every server log=============")
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, leader1, cfg.rafts[leader1].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+1)%servers, cfg.rafts[(leader1+1)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+2)%servers, cfg.rafts[(leader1+2)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+3)%servers, cfg.rafts[(leader1+3)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+4)%servers, cfg.rafts[(leader1+4)%servers].log)
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	// leader1  			[0 commit] , [51-100  commit]  , [151-200  commit] 						---------
+	// leader1 + 1  		[0 commit] , [51-100  commit]  , [151-200  commit] 						---------》》》》to same cluster， 并且提交了150 - 200 的日志，所以，此处应该是
+	// leader1 + 2			[0 commit] , [51-100  commit]  , [151-200  commit]    		这是other	---------
+
+	// leader1 + 3          [0 commit] , [51-100  commit] ,  [101 - 150 un commit] 		disconnect
+	// leader1 + 4          [0 commit] , [51-100  commit] , [101 - 150 un commit]		disconnect
 
 	// now everyone
 	DPrintf("now connect every one to cluster")
@@ -612,9 +668,24 @@ func TestBackup3B(t *testing.T) {
 		cfg.connect(i)
 	}
 
-	lastLog := rand.Int()
-	DPrintf("now make last log entry:%d to be same", lastLog)
-	cfg.one(lastLog, servers, true)
+	//lastLog := rand.Int()
+	DPrintf("now make last log entry:%d to be same", 234)
+	cfg.one(234, servers, true)
+
+	DPrintf("=============six to print every server log=============")
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, leader1, cfg.rafts[leader1].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+1)%servers, cfg.rafts[(leader1+1)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+2)%servers, cfg.rafts[(leader1+2)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+3)%servers, cfg.rafts[(leader1+3)%servers].log)
+	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+4)%servers, cfg.rafts[(leader1+4)%servers].log)
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	DPrintf("===============================================================")
+	// leader1  			[0 commit] , [51-100  commit]  , [151-200  commit] 	, [234, commit]
+	// leader1 + 1  		[0 commit] , [51-100  commit]  , [151-200  commit] 	, [234, commit]
+	// leader1 + 2			[0 commit] , [51-100  commit]  , [151-200  commit]  , [234, commit]
+	// leader1 + 3          [0 commit] , [51-100  commit]  , [151-200  commit] 	, [234, commit]
+	// leader1 + 4          [0 commit] , [51-100  commit]  , [151-200  commit]	, [234, commit]
 
 	cfg.end()
 }
