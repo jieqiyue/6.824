@@ -234,7 +234,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		localLastTerm = rf.log[len(rf.log)-1].Term
 	}
 
-	DPrintf("server[%d]begin to logic handler:%d vote request for term:%d, lastLogIndex is:%d, lastLogTerm is:%d", rf.me, args.CandidateId, args.Term, localLastIndex, localLastTerm)
+	DPrintf("server[%d]begin to logic handler:%d vote request for term:%d, local lastLogIndex is:%d, local lastLogTerm is:%d", rf.me, args.CandidateId, args.Term, localLastIndex, localLastTerm)
 	// 这里的判断不能使用args.Term >= localLastTerm && args.LastLogIndex >= localLastIndex，而是要使用
 	if args.LastLogTerm > localLastTerm || (args.LastLogTerm == localLastTerm && args.LastLogIndex >= localLastIndex) {
 		// todo 这里还是直接设置一下true，减少无效的选举，这个设置receiveNew是否需要移动到defer里面去
@@ -309,6 +309,8 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 
 	// 当preLog是dummy log的时候，一定是能够符合的吧
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		DPrintf("server[%d]got %d server log request,and args preIndex is:%d, args preTerm is:%d, local index in %d term is:%d",
+			rf.me, args.LeaderId, args.PrevLogIndex, args.PrevLogTerm, args.PrevLogIndex, rf.log[args.PrevLogIndex])
 		reply.Success = false
 		return
 	}
@@ -336,7 +338,7 @@ func (rf *Raft) RequestSendLog(args *SendLogArgs, reply *SendLogReply) {
 				}
 
 				rf.applyCh <- applyMsg
-				DPrintf("server[%d]apply log to applych,local term is:%d, log term is:%d, log index is:%d", rf.me, rf.currentTerm, rf.log[beginIndex].Term, rf.log[beginIndex].Index)
+				DPrintf("follower server[%d]apply log to applych,local term is:%d, log term is:%d, log index is:%d", rf.me, rf.currentTerm, rf.log[beginIndex].Term, rf.log[beginIndex].Index)
 			}
 
 			rf.commitIndex = newCommitIndex
@@ -581,7 +583,7 @@ func (rf *Raft) sendLogTicket() {
 				}
 				DPrintf("server[%d] prepare send log to %d,leader have %v log, "+
 					"the nextIndex is:%d, len of log is:%d, status is:%v, and term is:%d, send args term is:%d, msg type is:%v, papare to send log is:%v, args commitIndex is:%d",
-					rf.me, rf.log, i, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, sendLogArgs.LeaderCommit)
+					rf.me, i, rf.log, rf.nextIndex[i], len(rf.log), rf.state, rf.currentTerm, allSendLogArgs[i].Term, sendLogArgs.MsgType, sendLogArgs.Entries, sendLogArgs.LeaderCommit)
 			}
 		}
 
@@ -606,12 +608,12 @@ func (rf *Raft) sendLogTicket() {
 					// 则表示刚刚发出的这些日志都已经被这个follower保存了。那么就得更新为最后一个LogEntry的index+1的位置
 					toSendEntries := args.Entries
 					// for log
-					preLogTerm := args.PrevLogTerm
-					preLogIndex := args.PrevLogIndex
+					//preLogTerm := args.PrevLogTerm
+					//preLogIndex := args.PrevLogIndex
 
 					ok := rf.sendLog(i, &args, &reply)
 					if !ok {
-						DPrintf("server[%d] send log to %d, bug get fail, args Term is:%d, args Index is:%d", rf.me, i, preLogTerm, preLogIndex)
+						//DPrintf("server[%d] send log to %d, bug get fail, args Term is:%d, args Index is:%d", rf.me, i, preLogTerm, preLogIndex)
 						return
 					}
 
@@ -671,7 +673,7 @@ func (rf *Raft) sendLogTicket() {
 											}
 
 											rf.applyCh <- applyMsg
-											DPrintf("server[%d] apply a log entry to applyCh, log term is:%d, log index is:%d", rf.me, rf.log[toApplyIndex].Term, rf.log[toApplyIndex].Index)
+											DPrintf("leader server[%d] apply a log entry to applyCh, log term is:%d, log index is:%d", rf.me, rf.log[toApplyIndex].Term, rf.log[toApplyIndex].Index)
 										}
 
 										rf.commitIndex = beginIndex
@@ -708,12 +710,12 @@ func (rf *Raft) ticker() {
 		rf.mu.Lock()
 		shouldElection = false
 
-		DPrintf("server[%d]begin a new ticker, local state is:%v, local Term is:%d, and time is bigger than interval?:%v",
-			rf.me, rf.state, rf.currentTerm, time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond)
 		// todo  此处是否是这两个状态呢？如果某一个节点是候选者，并且在某一次选举中，并没有成为follower的话，就需要继续选举
 		// todo 所以这里也依赖这个receiveNew，这个receiveNew需要在接收到新heartBeat或者是appendEntries的时候更新
 		if time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond && (rf.state == Follower || rf.state == Candidate) {
 			DPrintf("server[%d]should begin a election", rf.me)
+			DPrintf("server[%d]begin a new ticker, local state is:%v, local Term is:%d, and time is bigger than interval?:%v",
+				rf.me, rf.state, rf.currentTerm, time.Since(rf.startElectionTime) > time.Duration(rf.electionInterval)*time.Millisecond)
 			shouldElection = true
 			rf.SetElectionTime()
 			rf.currentTerm++
@@ -791,7 +793,7 @@ func (rf *Raft) ticker() {
 				// 原来的判断条件中，需要所有的节点都回复才能跳出循环。
 				for voteCount <= (len(rf.peers)/2) && finishRequest < len(rf.peers) && voteCount+(len(rf.peers)-finishRequest) > (len(rf.peers)/2) {
 					cond.Wait()
-					DPrintf("server[%d] wait walk up, voteCount is:%d, finishRequest:%d,len/2 is:%d, vote plus finish is:%d", rf.me, voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
+					DPrintf("server[%d] wait walk up, voteCount is:%d, finishRequest:%d, len/2 is:%d, vote plus finish is:%d", rf.me, voteCount, finishRequest, len(rf.peers)/2, voteCount+(len(rf.peers)-finishRequest))
 				}
 				//DPrintf("server[%d]is going to sleep.....555", rf.me)
 				DPrintf("server[%d], vote for leader, got %d tickets, got %d failRpc, total %d request, args Term is:%d", rf.me, voteCount, rpcFailCount, finishRequest, args.Term)
@@ -840,6 +842,7 @@ func (rf *Raft) resetRaftIndex() {
 		if len(rf.log) == 1 {
 			rf.nextIndex[i] = 1
 		} else {
+			// todo 这里为什么要设置为len（rf.log） - 1 ？ 如果len是2的话，那么会设置为1.
 			rf.nextIndex[i] = len(rf.log) - 1
 		}
 

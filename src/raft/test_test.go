@@ -615,6 +615,10 @@ func TestBackup3B(t *testing.T) {
 	// leader1 + 3          [0 commit] , [51-100  commit] ,  [101 - 150 un commit] 						leader2
 	// leader1 + 4          [0 commit] , [51-100  commit] , [101 - 150 un commit]
 
+	// 此时继续给50条日志，并且不会被提交的，但是剩下的两个会达成共识
+	DPrintf("TestBackup3B:the 50 entry should not make agreement")
+	time.Sleep(RaftElectionTimeout / 2)
+
 	DPrintf("=============forth to print every server log=============")
 	DPrintf("leader1 is:%d, server %d have:%v", leader1, leader1, cfg.rafts[leader1].log)
 	DPrintf("leader1 is:%d, server %d have:%v", leader1, (leader1+1)%servers, cfg.rafts[(leader1+1)%servers].log)
@@ -624,10 +628,6 @@ func TestBackup3B(t *testing.T) {
 	DPrintf("===============================================================")
 	DPrintf("===============================================================")
 	DPrintf("===============================================================")
-
-	// 此时继续给50条日志，并且不会被提交的，但是剩下的两个会达成共识
-	DPrintf("TestBackup3B:the 50 entry should not make agreement")
-	time.Sleep(RaftElectionTimeout / 2)
 
 	// bring original leader back to life,
 	DPrintf("make every one disconnect to cluster")
